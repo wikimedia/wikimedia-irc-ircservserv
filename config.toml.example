@@ -1,0 +1,13 @@
+owners = []
+nickname = "legobot-test"
+alt_nicks = ["legobot2", "legobot3"]
+username = "legoktm"
+password = "legoktm:<password>"
+realname = "Hmmm"
+server = "irc.libera.chat"
+port = 6697
+use_tls = true
+encoding = "UTF-8"
+channels = ["##legoktm"]
+user_info = "I'm a test user for the irc crate."
+version = "irc:git:Rust"
