@@ -14,7 +14,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::{interval, timeout, Duration};
+use tokio::time::{interval, sleep, timeout, Duration};
 
 const FLAGS_FOUNDER: &str = "AFRefiorstv";
 const FLAGS_CRAT: &str = "Afiortv";
@@ -259,22 +259,27 @@ async fn sync_channel(
         // Getting op failed
         return Err(anyhow!("Unable to get op"));
     }
+    // FIXME: Implement proper ratelimiting, see https://github.com/aatxe/irc/issues/190
     for (account, flags) in flag_cmds {
         client.send_privmsg(
             "ChanServ",
             format!("flags {} {} {}", channel, account, flags),
         )?;
+        sleep(Duration::from_secs(1)).await;
         client.send_privmsg(
             channel,
             format!("Set /cs flags {} {} {}", channel, account, flags),
         )?;
+        sleep(Duration::from_secs(1)).await;
     }
     for mode in mode_cmds {
         client.send_mode(channel, &[mode.clone()])?;
+        sleep(Duration::from_secs(1)).await;
         client.send_privmsg(
             channel,
             format!("Set /mode {} {}", channel, &mode),
         )?;
+        sleep(Duration::from_secs(1)).await;
     }
 
     Ok(())
