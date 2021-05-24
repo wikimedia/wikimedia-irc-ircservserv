@@ -47,6 +47,9 @@ struct ManagedChannel {
     bans: HashSet<String>,
     #[serde(default)]
     invexes: HashSet<String>,
+    // unknown modes
+    #[serde(default)]
+    unknown: HashMap<String, String>,
     // state stuff
     #[serde(default)]
     flags_done: bool,
@@ -63,6 +66,10 @@ impl ManagedChannel {
 
     fn fix_flags(&self, cfg: &ManagedChannel) -> Vec<(String, String)> {
         let mut cmds = vec![];
+        for (name, mode) in self.unknown.iter() {
+            cmds.push((name.to_string(), format!("-{}", mode)))
+        }
+
         // FIXME: macro all of this
         for remove in self.founders.difference(&cfg.founders) {
             cmds.push((remove.to_string(), format!("-{}", FLAGS_FOUNDER)))
@@ -121,17 +128,23 @@ impl ManagedChannel {
             }
             let account = caps[1].to_string();
             match &caps[2] {
-                FLAGS_FOUNDER => self.founders.insert(account),
-                FLAGS_CRAT => self.crats.insert(account),
-                FLAGS_AUTOVOICE_OP => self.autovoice_op.insert(account),
-                FLAGS_OP => self.ops.insert(account),
-                FLAGS_PLUS_O => self.plus_o.insert(account),
+                FLAGS_FOUNDER => {
+                    self.founders.insert(account);
+                }
+                FLAGS_CRAT => {
+                    self.crats.insert(account);
+                }
+                FLAGS_AUTOVOICE_OP => {
+                    self.autovoice_op.insert(account);
+                }
+                FLAGS_OP => {
+                    self.ops.insert(account);
+                }
+                FLAGS_PLUS_O => {
+                    self.plus_o.insert(account);
+                }
                 mode => {
-                    return Err(anyhow!(
-                        "Unknown mode: {} ({})",
-                        mode,
-                        &account
-                    ))
+                    self.unknown.insert(account, mode.to_string());
                 }
             };
             Ok(())
