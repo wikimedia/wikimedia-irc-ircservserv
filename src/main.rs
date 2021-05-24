@@ -115,7 +115,8 @@ impl ManagedChannel {
         // 2        legoktm                +AFRefiorstv         (FOUNDER) [modified...
         // FIXME use Skizzerz's regex instead
         // TODO: lazy_static this
-        let re = Regex::new(r"^\d{1,3}\s+([A-z0-9\*\-!@/]+)\s+\+([A-z]+) ").unwrap();
+        let re =
+            Regex::new(r"^\d{1,3}\s+([A-z0-9\*\-!@/]+)\s+\+([A-z]+) ").unwrap();
         if let Some(caps) = re.captures(&line) {
             if caps.len() < 3 {
                 return Err(anyhow::anyhow!("Couldn't parse: {}", line));
@@ -127,7 +128,13 @@ impl ManagedChannel {
                 FLAGS_AUTOVOICE_OP => self.autovoice_op.insert(account),
                 FLAGS_OP => self.ops.insert(account),
                 FLAGS_PLUS_O => self.plus_o.insert(account),
-                mode => return Err(anyhow!("Unknown mode: {} ({})", mode, &account)),
+                mode => {
+                    return Err(anyhow!(
+                        "Unknown mode: {} ({})",
+                        mode,
+                        &account
+                    ))
+                }
             };
             Ok(())
         } else {
@@ -154,7 +161,8 @@ fn is_trusted(message: &Message) -> bool {
 
 /// Ask ChanServ for ops in a channel and wait till its set
 async fn wait_for_op(client: &Client, channel: &str) -> bool {
-    let tmt = timeout(Duration::from_secs(5), _wait_for_op(client, channel)).await;
+    let tmt =
+        timeout(Duration::from_secs(5), _wait_for_op(client, channel)).await;
     if tmt.is_err() {
         client
             .send_privmsg(
@@ -189,7 +197,11 @@ async fn _wait_for_op(client: &Client, channel: &str) {
     }
 }
 
-async fn sync_channel(client: &Client, channel: &str, state: &ManagedChannel) -> Result<()> {
+async fn sync_channel(
+    client: &Client,
+    channel: &str,
+    state: &ManagedChannel,
+) -> Result<()> {
     // TODO: Make path configurable, don't panic on invalid toml
     let cfg: ManagedChannel = toml::from_str(&fs::read_to_string(format!(
         "../ircservserv-config/{}.toml",
@@ -219,7 +231,8 @@ async fn sync_channel(client: &Client, channel: &str, state: &ManagedChannel) ->
     }
     for mode in mode_cmds {
         client.send_mode(channel, &[mode.clone()])?;
-        client.send_privmsg(HOME, format!("Set /mode {} {}", channel, &mode))?;
+        client
+            .send_privmsg(HOME, format!("Set /mode {} {}", channel, &mode))?;
     }
 
     Ok(())
@@ -253,7 +266,11 @@ fn is_opped_in(client: &Client, channel: &str) -> bool {
     false
 }
 
-async fn handle_response(resp: &Response, data: &[String], state: Arc<RwLock<BotState>>) {
+async fn handle_response(
+    resp: &Response,
+    data: &[String],
+    state: Arc<RwLock<BotState>>,
+) {
     if resp == &RPL_BANLIST {
         let mut w = state.write().await;
         let managed = w.channels.entry(data[1].to_string()).or_default();
@@ -321,7 +338,8 @@ async fn main() -> Result<()> {
                     w.flags_query = None;
                 } else {
                     let mut w = state.write().await;
-                    let managed = w.channels.entry(looking.to_string()).or_default();
+                    let managed =
+                        w.channels.entry(looking.to_string()).or_default();
                     match managed.add_chanserv(&notice) {
                         Ok(_) => {}
                         Err(e) => {
@@ -356,7 +374,10 @@ async fn main() -> Result<()> {
                         )
                         .unwrap();
                     // Start doing flags
-                    chanserv_tx.send(format!("\r\n{}", &channel)).await.unwrap();
+                    chanserv_tx
+                        .send(format!("\r\n{}", &channel))
+                        .await
+                        .unwrap();
                     // Make sure we're op before checking +b and +I
                     if !wait_for_op(&client, &channel).await {
                         // Failed at getting op
@@ -364,10 +385,16 @@ async fn main() -> Result<()> {
                     }
                     // TODO: combine these?
                     client
-                        .send_mode(&channel, &[Mode::Plus(ChannelMode::Ban, None)])
+                        .send_mode(
+                            &channel,
+                            &[Mode::Plus(ChannelMode::Ban, None)],
+                        )
                         .unwrap();
                     client
-                        .send_mode(&channel, &[Mode::Plus(ChannelMode::InviteException, None)])
+                        .send_mode(
+                            &channel,
+                            &[Mode::Plus(ChannelMode::InviteException, None)],
+                        )
                         .unwrap();
                     let state = state.clone();
                     let channel = channel.to_string();
@@ -376,7 +403,8 @@ async fn main() -> Result<()> {
                         // Check every two seconds if we're ready to go
                         let mut interval = interval(Duration::from_millis(200));
                         loop {
-                            if let Some(managed_channel) = state.read().await.channels.get(&channel)
+                            if let Some(managed_channel) =
+                                state.read().await.channels.get(&channel)
                             {
                                 //dbg!(&managed_channel);
                                 if managed_channel.is_done() {
