@@ -293,7 +293,13 @@ async fn handle_response(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut orig_client = Client::new("config.toml").await?;
+    let mut config = Config::load("config.toml")?;
+    if let Some(password_file) = config.options.get("password_file") {
+        // If the password_file option is set, read it and set it as the password
+        config.password =
+            Some(fs::read_to_string(password_file)?.trim().to_string());
+    }
+    let mut orig_client = Client::from_config(config).await?;
     let mut stream = orig_client.stream()?;
     // Now that we've got a mutable stream, wrap it in Arc<> for thread-safe read access
     let client = Arc::new(orig_client);

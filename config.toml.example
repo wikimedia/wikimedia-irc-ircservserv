@@ -11,3 +11,6 @@ encoding = "UTF-8"
 channels = ["##legoktm"]
 user_info = "I'm a test user for the irc crate."
 version = "irc:git:Rust"
+
+[options]
+password_file = "/foo/bar/password"
