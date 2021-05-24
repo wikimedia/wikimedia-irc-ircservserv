@@ -14,3 +14,4 @@ version = "irc:git:Rust"
 
 [options]
 password_file = "/foo/bar/password"
+channel_config = "/foo/bar/ircservserv-config"

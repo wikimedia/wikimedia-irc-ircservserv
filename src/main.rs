@@ -10,9 +10,9 @@ use irc::proto::response::Response::{
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::ops::Deref;
 use std::sync::Arc;
+use tokio::fs;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, timeout, Duration};
 
@@ -195,19 +195,48 @@ async fn _wait_for_op(client: &Client, channel: &str) {
     }
 }
 
+/// Read channel config from the directory
+async fn read_channel_config(
+    dir: &str,
+    channel: &str,
+) -> Result<ManagedChannel> {
+    Ok(toml::from_str(
+        &fs::read_to_string(format!(
+            "{}/{}.toml",
+            dir,
+            channel.trim_start_matches('#')
+        ))
+        .await?,
+    )?)
+}
+
 async fn sync_channel(
     client: &Client,
+    state: Arc<RwLock<BotState>>,
     channel: &str,
-    state: &ManagedChannel,
+    managed_channel: &ManagedChannel,
 ) -> Result<()> {
-    // TODO: Make path configurable, don't panic on invalid toml
-    let cfg: ManagedChannel = toml::from_str(&fs::read_to_string(format!(
-        "../ircservserv-config/{}.toml",
-        channel.trim_start_matches('#')
-    ))?)?;
-    dbg!(&state, &cfg);
-    let flag_cmds = state.fix_flags(&cfg);
-    let mode_cmds = state.fix_modes(&cfg);
+    let cfg = match read_channel_config(
+        state.read().await.config.get("channel_config").unwrap(),
+        channel,
+    )
+    .await
+    {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            client.send_privmsg(
+                channel,
+                format!(
+                    "Error reading channel configuration: {}",
+                    e.to_string()
+                ),
+            )?;
+            return Err(e);
+        }
+    };
+    dbg!(&managed_channel, &cfg);
+    let flag_cmds = managed_channel.fix_flags(&cfg);
+    let mode_cmds = managed_channel.fix_modes(&cfg);
     if flag_cmds.is_empty() && mode_cmds.is_empty() {
         client.send_privmsg(channel, format!("No updates for {}", channel))?;
         return Ok(());
@@ -229,26 +258,22 @@ async fn sync_channel(
     }
     for mode in mode_cmds {
         client.send_mode(channel, &[mode.clone()])?;
-        client
-            .send_privmsg(channel, format!("Set /mode {} {}", channel, &mode))?;
+        client.send_privmsg(
+            channel,
+            format!("Set /mode {} {}", channel, &mode),
+        )?;
     }
 
     Ok(())
 }
 
+#[derive(Default)]
 struct BotState {
     // channel currently querying flags for
     flags_query: Option<String>,
     channels: HashMap<String, ManagedChannel>,
-}
-
-impl BotState {
-    fn new() -> Self {
-        Self {
-            flags_query: None,
-            channels: HashMap::new(),
-        }
-    }
+    // TODO: Use a struct here
+    config: HashMap<String, String>,
 }
 
 fn is_opped_in(client: &Client, channel: &str) -> bool {
@@ -295,14 +320,19 @@ async fn main() -> Result<()> {
     if let Some(password_file) = config.options.get("password_file") {
         // If the password_file option is set, read it and set it as the password
         config.password =
-            Some(fs::read_to_string(password_file)?.trim().to_string());
+            Some(fs::read_to_string(password_file).await?.trim().to_string());
     }
-    let mut orig_client = Client::from_config(config).await?;
+    let mut orig_client = Client::from_config(config.clone()).await?;
     let mut stream = orig_client.stream()?;
     // Now that we've got a mutable stream, wrap it in Arc<> for thread-safe read access
     let client = Arc::new(orig_client);
     // state
-    let bot_state = Arc::new(RwLock::new(BotState::new()));
+    let bot_state = Arc::new(RwLock::new(BotState::default()));
+    // Copy over config into the state
+    {
+        let mut w = bot_state.write().await;
+        w.config = config.options.clone();
+    }
     // channel for all messages
     let (tx, mut rx) = mpsc::channel::<Message>(128);
     // channel for ChanServ notices
@@ -432,9 +462,14 @@ async fn main() -> Result<()> {
                             w.channels.remove(&channel).unwrap()
                         };
                         dbg!(&managed_channel);
-                        sync_channel(&client, &channel, &managed_channel)
-                            .await
-                            .unwrap();
+                        sync_channel(
+                            &client,
+                            state.clone(),
+                            &channel,
+                            &managed_channel,
+                        )
+                        .await
+                        .unwrap();
                         // de-op
                         client
                             .send_mode(
