@@ -237,6 +237,27 @@ fn is_opped_in(client: &Client, channel: &str) -> bool {
     false
 }
 
+async fn handle_response(resp: &Response, data: &[String], state: Arc<RwLock<BotState>>) {
+    if resp == &RPL_BANLIST {
+        let mut w = state.write().await;
+        let managed = w.channels.entry(data[1].to_string()).or_default();
+        managed.bans.insert(data[2].to_string());
+    } else if resp == &RPL_ENDOFBANLIST {
+        let mut w = state.write().await;
+        w.channels.entry(data[1].to_string()).or_default().bans_done = true;
+    } else if resp == &RPL_INVITELIST {
+        let mut w = state.write().await;
+        let managed = w.channels.entry(data[1].to_string()).or_default();
+        managed.invexes.insert(data[2].to_string());
+    } else if resp == &RPL_ENDOFINVITELIST {
+        let mut w = state.write().await;
+        w.channels
+            .entry(data[1].to_string())
+            .or_default()
+            .invexes_done = true;
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut orig_client = Client::new("config.toml").await?;
@@ -368,24 +389,7 @@ async fn main() -> Result<()> {
                 }
             }
             if let Command::Response(resp, data) = &message.command {
-                if resp == &RPL_BANLIST {
-                    let mut w = state.write().await;
-                    let managed = w.channels.entry(data[1].to_string()).or_default();
-                    managed.bans.insert(data[2].to_string());
-                } else if resp == &RPL_ENDOFBANLIST {
-                    let mut w = state.write().await;
-                    w.channels.entry(data[1].to_string()).or_default().bans_done = true;
-                } else if resp == &RPL_INVITELIST {
-                    let mut w = state.write().await;
-                    let managed = w.channels.entry(data[1].to_string()).or_default();
-                    managed.invexes.insert(data[2].to_string());
-                } else if resp == &RPL_ENDOFINVITELIST {
-                    let mut w = state.write().await;
-                    w.channels
-                        .entry(data[1].to_string())
-                        .or_default()
-                        .invexes_done = true;
-                }
+                handle_response(resp, data, state.clone()).await;
             }
         }
     });
