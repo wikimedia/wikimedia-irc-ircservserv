@@ -315,9 +315,18 @@ async fn main() -> Result<()> {
     let client_cs = client.clone();
     let chanserv_processor = tokio::spawn(async move {
         while let Some(notice) = chanserv_rx.recv().await {
-            // FIXME: reading flags needs locking
             // FIXME: figure out a better internal message passing strategy
             if notice.starts_with("\r\n") {
+                if state.read().await.flags_query.is_some() {
+                    // Someone else is reading flags, please wait
+                    let mut interval = interval(Duration::from_millis(200));
+                    loop {
+                        if state.read().await.flags_query.is_none() {
+                            break;
+                        }
+                        interval.tick().await;
+                    }
+                }
                 // Internal message with channel name
                 let channel = notice.trim_start_matches("\r\n").to_string();
                 {
