@@ -14,7 +14,7 @@ use std::fs;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time;
+use tokio::time::{interval, timeout, Duration};
 
 const FLAGS_FOUNDER: &str = "AFRefiorstv";
 const FLAGS_CRAT: &str = "Afiortv";
@@ -153,7 +153,22 @@ fn is_trusted(message: &Message) -> bool {
 }
 
 /// Ask ChanServ for ops in a channel and wait till its set
-async fn wait_for_op(client: &Client, channel: &str) {
+async fn wait_for_op(client: &Client, channel: &str) -> bool {
+    let tmt = timeout(Duration::from_secs(5), _wait_for_op(client, channel)).await;
+    if tmt.is_err() {
+        client
+            .send_privmsg(
+                channel,
+                format!("Error: Unable to get opped in {}", channel),
+            )
+            .unwrap();
+        false
+    } else {
+        true
+    }
+}
+
+async fn _wait_for_op(client: &Client, channel: &str) {
     if !is_opped_in(client, channel) {
         println!("Getting ops in {}", channel);
         client
@@ -164,7 +179,7 @@ async fn wait_for_op(client: &Client, channel: &str) {
         return;
     }
     // Wait until we are
-    let mut interval = time::interval(time::Duration::from_millis(200));
+    let mut interval = interval(Duration::from_millis(200));
     loop {
         if is_opped_in(client, channel) {
             break;
@@ -187,6 +202,11 @@ async fn sync_channel(client: &Client, channel: &str, state: &ManagedChannel) ->
         client.send_privmsg(HOME, format!("No updates for {}", channel))?;
         return Ok(());
     }
+    // If we have to change modes, make sure we're opped (already should've happened)
+    if !mode_cmds.is_empty() && !wait_for_op(client, channel).await {
+        // Getting op failed
+        return Err(anyhow!("Unable to get op"));
+    }
     for (account, flags) in flag_cmds {
         client.send_privmsg(
             "ChanServ",
@@ -196,10 +216,6 @@ async fn sync_channel(client: &Client, channel: &str, state: &ManagedChannel) ->
             HOME,
             format!("Set /cs flags {} {} {}", channel, account, flags),
         )?;
-    }
-    if !mode_cmds.is_empty() {
-        // If we have to change modes, make sure we're opped (already should've happened)
-        wait_for_op(client, channel).await;
     }
     for mode in mode_cmds {
         client.send_mode(channel, &[mode.clone()])?;
@@ -342,7 +358,10 @@ async fn main() -> Result<()> {
                     // Start doing flags
                     chanserv_tx.send(format!("\r\n{}", &channel)).await.unwrap();
                     // Make sure we're op before checking +b and +I
-                    wait_for_op(&client, &channel).await;
+                    if !wait_for_op(&client, &channel).await {
+                        // Failed at getting op
+                        continue;
+                    }
                     // TODO: combine these?
                     client
                         .send_mode(&channel, &[Mode::Plus(ChannelMode::Ban, None)])
@@ -355,7 +374,7 @@ async fn main() -> Result<()> {
                     let client = client.clone();
                     tokio::spawn(async move {
                         // Check every two seconds if we're ready to go
-                        let mut interval = time::interval(time::Duration::from_millis(200));
+                        let mut interval = interval(Duration::from_millis(200));
                         loop {
                             if let Some(managed_channel) = state.read().await.channels.get(&channel)
                             {
