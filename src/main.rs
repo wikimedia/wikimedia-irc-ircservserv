@@ -26,10 +26,8 @@ const FLAGS_PLUS_O: &str = "o";
 const GLOBAL_BANS: &str = "$j:#wikimedia-bans";
 
 /// Who can issue sync commands
-/// TODO: just reuse the founder/crats list
+/// TODO: just reuse the founder/crats list per-channel
 const TRUSTED: [&str; 1] = ["user/legoktm"];
-/// Where to notify about all changes
-const HOME: &str = "##legoktm";
 
 #[derive(Debug, Default, Deserialize)]
 struct ManagedChannel {
@@ -211,7 +209,7 @@ async fn sync_channel(
     let flag_cmds = state.fix_flags(&cfg);
     let mode_cmds = state.fix_modes(&cfg);
     if flag_cmds.is_empty() && mode_cmds.is_empty() {
-        client.send_privmsg(HOME, format!("No updates for {}", channel))?;
+        client.send_privmsg(channel, format!("No updates for {}", channel))?;
         return Ok(());
     }
     // If we have to change modes, make sure we're opped (already should've happened)
@@ -225,14 +223,14 @@ async fn sync_channel(
             format!("flags {} {} {}", channel, account, flags),
         )?;
         client.send_privmsg(
-            HOME,
+            channel,
             format!("Set /cs flags {} {} {}", channel, account, flags),
         )?;
     }
     for mode in mode_cmds {
         client.send_mode(channel, &[mode.clone()])?;
         client
-            .send_privmsg(HOME, format!("Set /mode {} {}", channel, &mode))?;
+            .send_privmsg(channel, format!("Set /mode {} {}", channel, &mode))?;
     }
 
     Ok(())
@@ -406,7 +404,7 @@ async fn main() -> Result<()> {
                     let channel = channel.to_string();
                     let client = client.clone();
                     tokio::spawn(async move {
-                        // Check every two seconds if we're ready to go
+                        // Check every 200ms if we're ready to go
                         let mut interval = interval(Duration::from_millis(200));
                         loop {
                             if let Some(managed_channel) =
