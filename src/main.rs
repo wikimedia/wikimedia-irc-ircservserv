@@ -398,7 +398,6 @@ async fn main() -> Result<()> {
     let client = client.clone();
     let processor = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
-            dbg!(&message);
             if let Command::NOTICE(_, notice) = &message.command {
                 if is_from(&message, "ChanServ") {
                     chanserv_tx.send(notice.to_string()).await.unwrap();
