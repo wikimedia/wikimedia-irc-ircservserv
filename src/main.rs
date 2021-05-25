@@ -426,12 +426,26 @@ async fn main() -> Result<()> {
                         )
                         .unwrap();
                 }
-                if is_trusted(&state, &message).await
-                    && privmsg.starts_with("!issync ")
-                {
-                    // FIXME: input validation
-                    let sp: Vec<_> = privmsg.split(' ').collect();
-                    let channel = sp[1].to_string();
+                if is_trusted(&state, &message).await && privmsg == "!issync" {
+                    let channel = match message.response_target() {
+                        Some(target) => {
+                            if !target.starts_with('#') {
+                                // Not a channel
+                                client
+                                    .send_privmsg(
+                                        target,
+                                        "This command must be used in-channel.",
+                                    )
+                                    .unwrap();
+                                continue;
+                            }
+                            target.to_string()
+                        }
+                        None => {
+                            // Not a PM, not in channel? wtf.
+                            continue;
+                        }
+                    };
                     client
                         .send_privmsg(
                             message.response_target().unwrap(),
