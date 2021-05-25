@@ -416,6 +416,16 @@ async fn main() -> Result<()> {
                 }
             }
             if let Command::PRIVMSG(_, privmsg) = &message.command {
+                if privmsg == "!isstrust" {
+                    let trusted =
+                        state.read().await.botconfig.trusted.join(", ");
+                    client
+                        .send_privmsg(
+                            message.response_target().unwrap(),
+                            format!("I trust: {}", trusted),
+                        )
+                        .unwrap();
+                }
                 if is_trusted(&state, &message).await
                     && privmsg.starts_with("!issync ")
                 {
