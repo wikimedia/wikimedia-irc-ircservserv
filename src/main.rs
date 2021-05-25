@@ -19,6 +19,7 @@ type LockedState = Arc<RwLock<BotState>>;
 
 mod command;
 mod config;
+mod git;
 
 use config::BotConfig;
 
@@ -429,6 +430,19 @@ async fn main() -> Result<()> {
                         });
                     }
                     continue;
+                } else if privmsg == "!isspull" {
+                    if !is_trusted(&state, &message).await {
+                        // Silently ignore
+                        continue;
+                    }
+                    // FIXME: this should only be done in-channel, maybe only -ops?
+                    if let Some(target) = message.response_target() {
+                        let target = target.to_string();
+                        let client = client.clone();
+                        tokio::spawn(async move {
+                            command::iss_pull(&client, &target).await;
+                        });
+                    }
                 }
                 if is_trusted(&state, &message).await && privmsg == "!issync" {
                     let channel = match message.response_target() {
