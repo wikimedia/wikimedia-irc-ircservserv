@@ -10,11 +10,14 @@ use irc::proto::response::Response::{
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, sleep, timeout, Duration};
+
+mod config;
+
+use config::BotConfig;
 
 const FLAGS_FOUNDER: &str = "AFRefiorstv";
 const FLAGS_CRAT: &str = "Afiortv";
@@ -24,10 +27,6 @@ const FLAGS_PLUS_O: &str = "o";
 
 // TODO: set forward to -overflow
 const GLOBAL_BANS: &str = "$j:#wikimedia-bans";
-
-/// Who can issue sync commands
-/// TODO: just reuse the founder/crats list per-channel
-const TRUSTED: [&str; 1] = ["user/legoktm"];
 
 #[derive(Debug, Default, Deserialize)]
 struct ManagedChannel {
@@ -162,9 +161,10 @@ fn is_from(message: &Message, name: &str) -> bool {
     }
 }
 
-fn is_trusted(message: &Message) -> bool {
+async fn is_trusted(state: &Arc<RwLock<BotState>>, message: &Message) -> bool {
     if let Some(Prefix::Nickname(_, _, cloak)) = &message.prefix {
-        TRUSTED.contains(&cloak.to_string().deref())
+        let trusted = &state.read().await.botconfig.trusted;
+        trusted.contains(&cloak.to_string())
     } else {
         false
     }
@@ -215,7 +215,7 @@ async fn read_channel_config(
 ) -> Result<ManagedChannel> {
     Ok(toml::from_str(
         &fs::read_to_string(format!(
-            "{}/{}.toml",
+            "{}/channels/{}.toml",
             dir,
             channel.trim_start_matches('#')
         ))
@@ -230,7 +230,7 @@ async fn sync_channel(
     managed_channel: &ManagedChannel,
 ) -> Result<()> {
     let cfg = match read_channel_config(
-        state.read().await.config.get("channel_config").unwrap(),
+        state.read().await.botconfig.channel_config.clone().as_str(),
         channel,
     )
     .await
@@ -290,8 +290,7 @@ struct BotState {
     // channel currently querying flags for
     flags_query: Option<String>,
     channels: HashMap<String, ManagedChannel>,
-    // TODO: Use a struct here
-    config: HashMap<String, String>,
+    botconfig: BotConfig,
 }
 
 fn is_opped_in(client: &Client, channel: &str) -> bool {
@@ -334,23 +333,16 @@ async fn handle_response(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut config = Config::load("config.toml")?;
-    if let Some(password_file) = config.options.get("password_file") {
-        // If the password_file option is set, read it and set it as the password
-        config.password =
-            Some(fs::read_to_string(password_file).await?.trim().to_string());
-    }
-    let mut orig_client = Client::from_config(config.clone()).await?;
+    let botconfig = BotConfig::load("config.toml").await?;
+    let mut orig_client = Client::from_config(botconfig.irc.clone()).await?;
     let mut stream = orig_client.stream()?;
     // Now that we've got a mutable stream, wrap it in Arc<> for thread-safe read access
     let client = Arc::new(orig_client);
     // state
-    let bot_state = Arc::new(RwLock::new(BotState::default()));
-    // Copy over config into the state
-    {
-        let mut w = bot_state.write().await;
-        w.config = config.options.clone();
-    }
+    let bot_state = Arc::new(RwLock::new(BotState {
+        botconfig,
+        ..Default::default()
+    }));
     // channel for all messages
     let (tx, mut rx) = mpsc::channel::<Message>(128);
     // channel for ChanServ notices
@@ -418,12 +410,15 @@ async fn main() -> Result<()> {
         while let Some(message) = rx.recv().await {
             if let Command::NOTICE(_, notice) = &message.command {
                 if is_from(&message, "ChanServ") {
+                    dbg!(&message);
                     chanserv_tx.send(notice.to_string()).await.unwrap();
                     continue;
                 }
             }
             if let Command::PRIVMSG(_, privmsg) = &message.command {
-                if is_trusted(&message) && privmsg.starts_with("!issync ") {
+                if is_trusted(&state, &message).await
+                    && privmsg.starts_with("!issync ")
+                {
                     // FIXME: input validation
                     let sp: Vec<_> = privmsg.split(' ').collect();
                     let channel = sp[1].to_string();

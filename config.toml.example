@@ -1,3 +1,10 @@
+password_file = "/foo/bar/password"
+channel_config = "/foo/bar/ircservserv-config"
+trusted = [
+    "user/foo"
+]
+
+[irc]
 owners = []
 nickname = "legobot-test"
 alt_nicks = ["legobot2", "legobot3"]
@@ -11,7 +18,3 @@ encoding = "UTF-8"
 channels = ["##legoktm"]
 user_info = "I'm a test user for the irc crate."
 version = "irc:git:Rust"
-
-[options]
-password_file = "/foo/bar/password"
-channel_config = "/foo/bar/ircservserv-config"
