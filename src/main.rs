@@ -15,6 +15,9 @@ use tokio::fs;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, sleep, timeout, Duration};
 
+type LockedState = Arc<RwLock<BotState>>;
+
+mod command;
 mod config;
 
 use config::BotConfig;
@@ -161,7 +164,7 @@ fn is_from(message: &Message, name: &str) -> bool {
     }
 }
 
-async fn is_trusted(state: &Arc<RwLock<BotState>>, message: &Message) -> bool {
+async fn is_trusted(state: &LockedState, message: &Message) -> bool {
     if let Some(Prefix::Nickname(_, _, cloak)) = &message.prefix {
         let trusted = &state.read().await.botconfig.trusted;
         trusted.contains(&cloak.to_string())
@@ -225,7 +228,7 @@ async fn read_channel_config(
 
 async fn sync_channel(
     client: &Client,
-    state: Arc<RwLock<BotState>>,
+    state: LockedState,
     channel: &str,
     managed_channel: &ManagedChannel,
 ) -> Result<()> {
@@ -306,11 +309,7 @@ fn is_opped_in(client: &Client, channel: &str) -> bool {
     false
 }
 
-async fn handle_response(
-    resp: &Response,
-    data: &[String],
-    state: Arc<RwLock<BotState>>,
-) {
+async fn handle_response(resp: &Response, data: &[String], state: LockedState) {
     if resp == &RPL_BANLIST {
         let mut w = state.write().await;
         let managed = w.channels.entry(data[1].to_string()).or_default();
@@ -417,14 +416,19 @@ async fn main() -> Result<()> {
             }
             if let Command::PRIVMSG(_, privmsg) = &message.command {
                 if privmsg == "!isstrust" {
-                    let trusted =
-                        state.read().await.botconfig.trusted.join(", ");
-                    client
-                        .send_privmsg(
-                            message.response_target().unwrap(),
-                            format!("I trust: {}", trusted),
-                        )
-                        .unwrap();
+                    // There should always be a target, but if there isn't, there's
+                    // nothing at all we can do...
+                    if let Some(target) = message.response_target() {
+                        let target = target.to_string();
+                        let client = client.clone();
+                        let state = state.clone();
+                        tokio::spawn(async move {
+                            command::iss_trust(&client, &target, &state)
+                                .await
+                                .unwrap();
+                        });
+                    }
+                    continue;
                 }
                 if is_trusted(&state, &message).await && privmsg == "!issync" {
                     let channel = match message.response_target() {
