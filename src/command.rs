@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{git, LockedState};
 
 /// Handler for !isstrust
-pub(crate) async fn iss_trust(
+pub async fn iss_trust(
     client: &Arc<Client>,
     target: &str,
     state: &LockedState,
@@ -15,7 +15,7 @@ pub(crate) async fn iss_trust(
     Ok(())
 }
 
-pub(crate) async fn iss_pull(client: &Arc<Client>, target: &str) {
+pub async fn iss_pull(client: &Arc<Client>, target: &str) {
     match git::pull().await {
         Ok(changed) => {
             if changed.is_empty() {

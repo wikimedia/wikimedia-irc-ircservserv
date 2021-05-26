@@ -39,7 +39,7 @@ async fn changes(first: &str, second: &str) -> Result<Vec<String>> {
 
 /// Fetch updates to the config repo, identify which are changes
 /// to channels and then actually pull it.
-pub(crate) async fn pull() -> Result<Vec<String>> {
+pub async fn pull() -> Result<Vec<String>> {
     // Fetch remote updates
     git(&["fetch"]).await?;
     // Identify changes to channel configs
