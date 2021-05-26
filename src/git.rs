@@ -3,6 +3,7 @@ use tokio::process;
 
 /// Execute a git command
 async fn git(args: &[&str]) -> Result<String> {
+    println!("Running $ git {}", args.join(" "));
     let output = process::Command::new("git").args(args).output().await?;
     if output.status.success() {
         Ok(String::from_utf8(output.stdout)?)
