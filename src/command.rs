@@ -22,13 +22,21 @@ pub async fn iss_pull(client: &Arc<Client>, target: &str) {
                 client
                     .send_privmsg(target, "There are no pending changes.")
                     .unwrap();
-            } else {
-                client
-                    .send_privmsg(
-                        target,
-                        format!("Pulled changes for: {}", changed.join(", ")),
-                    )
-                    .unwrap();
+                return;
+            }
+
+            client
+                .send_privmsg(
+                    target,
+                    format!("Pulled changes for: {}", changed.join(", ")),
+                )
+                .unwrap();
+            // Join any new channels that we just learned about
+            let currently_in = client.list_channels().unwrap_or_else(Vec::new);
+            for channel in changed {
+                if !currently_in.contains(&channel) {
+                    client.send_join(&channel).unwrap();
+                }
             }
         }
         Err(e) => {
