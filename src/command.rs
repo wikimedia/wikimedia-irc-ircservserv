@@ -7,7 +7,19 @@ use tokio::time::{interval, sleep, Duration};
 use crate::config::TrustLevel;
 use crate::{channel::ManagedChannel, git, is_trusted, LockedState};
 
+// FIXME: don't hardcode
+const PULL_CHANNEL: &str = "#wikimedia-ops";
+
 pub async fn iss_pull(client: &Arc<Client>, target: &str) {
+    if target != PULL_CHANNEL {
+        client
+            .send_privmsg(
+                target,
+                format!("This command can only be used in {}", PULL_CHANNEL),
+            )
+            .unwrap();
+        return;
+    }
     match git::pull().await {
         Ok(changed) => {
             if changed.is_empty() {
