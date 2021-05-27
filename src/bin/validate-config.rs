@@ -2,12 +2,18 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::{env, fs, process};
 
+// TODO: don't hardcode this
+const ACCOUNT: &str = "ircservserv-wm";
+
 use ircservserv::channel::ManagedChannel;
 
 fn validate(path: &Path) -> Result<()> {
     let cfg: ManagedChannel = toml::from_str(&fs::read_to_string(path)?)?;
     if cfg.founders.len() > 4 {
         return Err(anyhow!("Can only have 4 founders"));
+    }
+    if !cfg.founders.contains(ACCOUNT) {
+        return Err(anyhow!("{} must be listed as a founder", ACCOUNT));
     }
     Ok(())
 }
