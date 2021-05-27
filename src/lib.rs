@@ -16,3 +16,21 @@ pub struct BotState {
     pub channels: HashMap<String, channel::ManagedChannel>,
     pub botconfig: config::BotConfig,
 }
+
+impl BotState {
+    pub fn is_channel_done(&self, channel: &str) -> bool {
+        if let Some(managed_channel) = self.channels.get(channel) {
+            managed_channel.is_done()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_flags_done(&self, channel: &str) -> bool {
+        if let Some(managed_channel) = self.channels.get(channel) {
+            managed_channel.flags_done
+        } else {
+            false
+        }
+    }
+}

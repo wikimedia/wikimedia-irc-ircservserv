@@ -350,13 +350,8 @@ async fn main() -> Result<()> {
                         // Check every 200ms if we're ready to go
                         let mut interval = interval(Duration::from_millis(200));
                         loop {
-                            if let Some(managed_channel) =
-                                state.read().await.channels.get(&channel)
-                            {
-                                //dbg!(&managed_channel);
-                                if managed_channel.is_done() {
-                                    break;
-                                }
+                            if state.read().await.is_channel_done(&channel) {
+                                break;
                             }
                             // Wait a bit (but make sure we're not holding the read lock here)
                             interval.tick().await;
