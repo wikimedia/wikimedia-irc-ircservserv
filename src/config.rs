@@ -8,8 +8,16 @@ pub struct BotConfig {
     #[serde(default)]
     password_file: Option<String>,
     pub channel_config: String,
+    #[serde(default)]
+    pub owners: Vec<String>,
+    #[serde(default)]
     pub trusted: Vec<String>,
     pub irc: Config,
+}
+
+pub enum TrustLevel {
+    Owner,
+    Trusted,
 }
 
 impl BotConfig {
