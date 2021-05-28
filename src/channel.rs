@@ -50,44 +50,81 @@ impl ManagedChannel {
     }
 
     pub fn fix_flags(&self, cfg: &ManagedChannel) -> Vec<(String, String)> {
-        let mut cmds = vec![];
+        let mut changes: HashMap<String, Vec<String>> = HashMap::new();
         for (name, mode) in self.unknown.iter() {
-            cmds.push((name.to_string(), format!("-{}", mode)))
+            changes
+                .entry(name.to_string())
+                .or_default()
+                .push(format!("-{}", mode));
         }
 
         // FIXME: macro all of this
         for remove in self.founders.difference(&cfg.founders) {
-            cmds.push((remove.to_string(), format!("-{}", FLAGS_FOUNDER)))
+            changes
+                .entry(remove.to_string())
+                .or_default()
+                .push(format!("-{}", FLAGS_FOUNDER));
+            //            cmds.push((remove.to_string(), format!("-{}", FLAGS_FOUNDER)))
         }
         for add in cfg.founders.difference(&self.founders) {
-            cmds.push((add.to_string(), format!("+{}", FLAGS_FOUNDER)))
+            changes
+                .entry(add.to_string())
+                .or_default()
+                .push(format!("+{}", FLAGS_FOUNDER));
         }
         for remove in self.crats.difference(&cfg.crats) {
-            cmds.push((remove.to_string(), format!("-{}", FLAGS_CRAT)))
+            changes
+                .entry(remove.to_string())
+                .or_default()
+                .push(format!("-{}", FLAGS_CRAT));
         }
         for add in cfg.crats.difference(&self.crats) {
-            cmds.push((add.to_string(), format!("+{}", FLAGS_CRAT)))
+            changes
+                .entry(add.to_string())
+                .or_default()
+                .push(format!("+{}", FLAGS_CRAT));
         }
         for remove in self.autovoice_op.difference(&cfg.autovoice_op) {
-            cmds.push((remove.to_string(), format!("-{}", FLAGS_AUTOVOICE_OP)))
+            changes
+                .entry(remove.to_string())
+                .or_default()
+                .push(format!("-{}", FLAGS_AUTOVOICE_OP));
         }
         for add in cfg.autovoice_op.difference(&self.autovoice_op) {
-            cmds.push((add.to_string(), format!("+{}", FLAGS_AUTOVOICE_OP)))
+            changes
+                .entry(add.to_string())
+                .or_default()
+                .push(format!("+{}", FLAGS_AUTOVOICE_OP));
         }
         for remove in self.ops.difference(&cfg.ops) {
-            cmds.push((remove.to_string(), format!("-{}", FLAGS_OP)))
+            changes
+                .entry(remove.to_string())
+                .or_default()
+                .push(format!("-{}", FLAGS_OP));
         }
         for add in cfg.ops.difference(&self.ops) {
-            cmds.push((add.to_string(), format!("+{}", FLAGS_OP)))
+            changes
+                .entry(add.to_string())
+                .or_default()
+                .push(format!("+{}", FLAGS_OP));
         }
         for remove in self.plus_o.difference(&cfg.plus_o) {
-            cmds.push((remove.to_string(), format!("-{}", FLAGS_PLUS_O)))
+            changes
+                .entry(remove.to_string())
+                .or_default()
+                .push(format!("-{}", FLAGS_PLUS_O));
         }
         for add in cfg.plus_o.difference(&self.plus_o) {
-            cmds.push((add.to_string(), format!("+{}", FLAGS_PLUS_O)))
+            changes
+                .entry(add.to_string())
+                .or_default()
+                .push(format!("+{}", FLAGS_PLUS_O));
         }
 
-        cmds
+        changes
+            .iter()
+            .map(|(name, modes)| (name.to_string(), modes.join("")))
+            .collect()
     }
 
     pub fn fix_modes(&self, cfg: &ManagedChannel) -> Vec<Mode<ChannelMode>> {
@@ -162,9 +199,8 @@ mod tests {
         };
         let res = managed.fix_flags(&cfg);
         let expected = vec![
-            ("foo".to_string(), "-AFRefiorstv".to_string()),
+            ("foo".to_string(), "-AFRefiorstv+Aiotv".to_string()),
             ("bar".to_string(), "+AFRefiorstv".to_string()),
-            ("foo".to_string(), "+Aiotv".to_string()),
         ];
         assert_eq!(expected, res);
     }
