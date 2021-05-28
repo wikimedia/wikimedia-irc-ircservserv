@@ -138,3 +138,34 @@ impl ManagedChannel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn set(arg: &str) -> HashSet<String> {
+        let mut set = HashSet::new();
+        set.insert(arg.to_string());
+        set
+    }
+
+    #[test]
+    fn test_fix_flags() {
+        let managed = ManagedChannel {
+            founders: set("foo"),
+            ..Default::default()
+        };
+        let cfg = ManagedChannel {
+            founders: set("bar"),
+            ops: set("foo"),
+            ..Default::default()
+        };
+        let res = managed.fix_flags(&cfg);
+        let expected = vec![
+            ("foo".to_string(), "-AFRefiorstv".to_string()),
+            ("bar".to_string(), "+AFRefiorstv".to_string()),
+            ("foo".to_string(), "+Aiotv".to_string()),
+        ];
+        assert_eq!(expected, res);
+    }
+}
