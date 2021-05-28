@@ -10,6 +10,11 @@ use crate::{channel::ManagedChannel, git, is_trusted, LockedState};
 // FIXME: don't hardcode
 const PULL_CHANNEL: &str = "#wikimedia-ops";
 
+/// Respond to `!isspull`, which pulls the config repo
+///
+/// This command must be used in the pull channel. Once
+/// it's finished, it will respond with the list of channels
+/// that have config updates.
 pub async fn iss_pull(client: &Arc<Client>, target: &str) {
     if target != PULL_CHANNEL {
         client
@@ -54,6 +59,7 @@ pub async fn iss_pull(client: &Arc<Client>, target: &str) {
     }
 }
 
+/// Require a command was sent in a channel, not PM
 fn must_be_in_channel(sender: Sender, message: &Message) -> Option<String> {
     if let Some(target) = message.response_target() {
         if !target.starts_with('#') {
@@ -71,6 +77,16 @@ fn must_be_in_channel(sender: Sender, message: &Message) -> Option<String> {
     }
 }
 
+/// Responds to `!issync`, the whole magic of the bot.
+/// Basically this command will:
+/// * Verify the requestor is logged in
+/// * Ask ChanServ for flags/access list
+/// * Verify requestor is +F in the channel (or bot owner)
+/// * Tell the channel it's syncing
+/// * op up to look at the ban and invex lists
+/// * Wait for all the lists to come in
+/// * Identify any mismatches and execute them
+/// * De-op
 pub async fn iss_sync(
     message: &Message,
     client: &Arc<Client>,
@@ -167,6 +183,8 @@ pub async fn iss_sync(
     });
 }
 
+/// Do the actual sync step, comparing the live channel
+/// state to what our configuration says it should be
 async fn sync_channel(
     client: &Client,
     state: LockedState,
