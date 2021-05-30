@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender as MpscSender;
 use tokio::time::{interval, sleep, Duration};
 
+use crate::chanserv;
 use crate::config::TrustLevel;
 use crate::{channel::ManagedChannel, git, is_trusted, LockedState};
 
@@ -91,7 +92,7 @@ pub async fn iss_sync(
     message: &Message,
     client: &Arc<Client>,
     state: &LockedState,
-    chanserv_tx: MpscSender<String>,
+    chanserv_tx: MpscSender<chanserv::Message>,
 ) {
     // FIXME: avoid unwrap
     let channel = must_be_in_channel(client.sender(), message).unwrap();
@@ -109,7 +110,10 @@ pub async fn iss_sync(
         }
     };
     // First we need to verify the person making the request is a founder
-    chanserv_tx.send(format!("\r\n{}", &channel)).await.unwrap();
+    chanserv_tx
+        .send(chanserv::Message::Flags(channel.to_string()))
+        .await
+        .unwrap();
     let mut flag_interval = interval(Duration::from_millis(200));
     loop {
         if state.read().await.is_flags_done(&channel) {
@@ -134,7 +138,7 @@ pub async fn iss_sync(
     client
         .send_privmsg(
             message.response_target().unwrap(),
-            format!("Syncing {}", &channel),
+            format!("Syncing {} (requested by {})", &channel, &account),
         )
         .unwrap();
     // Make sure we're op before checking +b and +I
@@ -166,7 +170,7 @@ pub async fn iss_sync(
             let mut w = state.write().await;
             w.channels.remove(&channel).unwrap()
         };
-        dbg!(&managed_channel);
+        //dbg!(&managed_channel);
         sync_channel(&client, state.clone(), &channel, &managed_channel)
             .await
             .unwrap();
@@ -209,7 +213,7 @@ async fn sync_channel(
             return Err(e);
         }
     };
-    dbg!(&managed_channel, &cfg);
+    //dbg!(&managed_channel, &cfg);
     let flag_cmds = managed_channel.fix_flags(&cfg);
     let mode_cmds = managed_channel.fix_modes(&cfg);
     if flag_cmds.is_empty() && mode_cmds.is_empty() {

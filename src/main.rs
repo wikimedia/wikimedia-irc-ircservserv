@@ -5,14 +5,14 @@ use irc::proto::caps::Capability;
 use irc::proto::response::Response::{
     RPL_BANLIST, RPL_ENDOFBANLIST, RPL_ENDOFINVITELIST, RPL_INVITELIST,
 };
+use log::debug;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::{interval, Duration};
 
 use ircservserv::{
-    command,
+    chanserv, command,
     config::{BotConfig, TrustLevel},
-    is_trusted, BotState, LockedState,
+    extract_account, is_trusted, BotState, LockedState,
 };
 
 fn is_from(message: &Message, name: &str) -> bool {
@@ -46,6 +46,7 @@ async fn handle_response(resp: &Response, data: &[String], state: LockedState) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
     let botconfig = BotConfig::load("config.toml").await?;
     let mut orig_client = Client::from_config(botconfig.irc.clone()).await?;
     let mut stream = orig_client.stream()?;
@@ -58,8 +59,9 @@ async fn main() -> Result<()> {
     }));
     // channel for all messages
     let (tx, mut rx) = mpsc::channel::<Message>(128);
-    // channel for ChanServ notices
-    let (chanserv_tx, mut chanserv_rx) = mpsc::channel::<String>(128);
+    // channel for ChanServ interactions
+    let (chanserv_tx, mut chanserv_rx) =
+        mpsc::channel::<chanserv::Message>(128);
 
     client.send_cap_req(&[Capability::MultiPrefix, Capability::AccountTag])?;
     client.identify()?;
@@ -67,67 +69,21 @@ async fn main() -> Result<()> {
     let state = bot_state.clone();
     let client_cs = client.clone();
     let chanserv_processor = tokio::spawn(async move {
-        while let Some(notice) = chanserv_rx.recv().await {
-            // FIXME: figure out a better internal message passing strategy
-            if notice.starts_with("\r\n") {
-                if state.read().await.flags_query.is_some() {
-                    // Someone else is reading flags, please wait
-                    let mut interval = interval(Duration::from_millis(200));
-                    loop {
-                        if state.read().await.flags_query.is_none() {
-                            break;
-                        }
-                        interval.tick().await;
-                    }
-                }
-                // Internal message with channel name
-                let channel = notice.trim_start_matches("\r\n").to_string();
-                {
-                    let mut w = state.write().await;
-                    w.flags_query = Some(channel.to_string());
-                }
-                client_cs
-                    .send_privmsg("ChanServ", format!("flags {}", &channel))
-                    .unwrap();
-                continue;
-            }
-            // Clone instead of locking since we need to get the
-            // write lock inside to clear it
-            let looking = state.read().await.flags_query.clone();
-            if notice.starts_with("--------------")
-                || notice.starts_with("Entry    Nickname/Host")
-            {
-                continue;
-            }
-            if let Some(looking) = &looking {
-                if notice.starts_with("End of") {
-                    let mut w = state.write().await;
-                    w.channels.get_mut(looking).unwrap().flags_done = true;
-                    w.flags_query = None;
-                } else {
-                    let mut w = state.write().await;
-                    let managed =
-                        w.channels.entry(looking.to_string()).or_default();
-                    match managed.add_chanserv(&notice) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            dbg!(e);
-                        }
-                    }
-                }
-            }
-        }
+        chanserv::listen(&mut chanserv_rx, state, client_cs).await;
     });
 
     let state = bot_state.clone();
     let client = client.clone();
     let processor = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
-            dbg!(&message);
+            //dbg!(&message);
             if let Command::NOTICE(_, notice) = &message.command {
                 if is_from(&message, "ChanServ") {
-                    dbg!(&message);
-                    chanserv_tx.send(notice.to_string()).await.unwrap();
+                    debug!("From ChanServ: {}", notice);
+                    chanserv_tx
+                        .send(chanserv::Message::Notice(notice.to_string()))
+                        .await
+                        .unwrap();
                     continue;
                 }
             }
@@ -148,6 +104,12 @@ async fn main() -> Result<()> {
                     }
                     continue;
                 } else if privmsg == "!issync" {
+                    debug!(
+                        "Received !issync for {} from {}",
+                        message.response_target().unwrap_or("unknown"),
+                        extract_account(&message)
+                            .unwrap_or_else(|| "unknown".to_string())
+                    );
                     let client = client.clone();
                     let message = message.clone();
                     let state = state.clone();

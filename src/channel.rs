@@ -138,7 +138,7 @@ impl ManagedChannel {
         cmds
     }
 
-    pub fn add_chanserv(&mut self, line: &str) -> Result<()> {
+    pub fn add_flags_from_chanserv(&mut self, line: &str) -> Result<()> {
         // 2        legoktm                +AFRefiorstv         (FOUNDER) [modified...
         // FIXME use Skizzerz's regex instead
         // TODO: lazy_static this

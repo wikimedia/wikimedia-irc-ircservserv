@@ -1,6 +1,7 @@
 use anyhow::Result;
 use irc::client::data::AccessLevel;
 use irc::client::prelude::*;
+use log::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::fs;
@@ -8,6 +9,7 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, timeout, Duration};
 
 pub mod channel;
+pub mod chanserv;
 pub mod command;
 pub mod config;
 pub mod git;
@@ -19,8 +21,9 @@ use config::TrustLevel;
 
 #[derive(Default)]
 pub struct BotState {
-    // channel currently querying flags for
-    pub flags_query: Option<String>,
+    /// What we're currently PMing ChanServ for
+    pub chanserv: Option<chanserv::Message>,
+    /// State of channels we're currently looking up
     pub channels: HashMap<String, channel::ManagedChannel>,
     pub botconfig: config::BotConfig,
 }
@@ -58,6 +61,7 @@ async fn wait_for_op(client: &Client, channel: &str) -> bool {
     let tmt =
         timeout(Duration::from_secs(5), _wait_for_op(client, channel)).await;
     if tmt.is_err() {
+        debug!("Timeout getting ops for {}", channel);
         client
             .send_privmsg(
                 channel,
@@ -72,7 +76,7 @@ async fn wait_for_op(client: &Client, channel: &str) -> bool {
 
 async fn _wait_for_op(client: &Client, channel: &str) {
     if !is_opped_in(client, channel) {
-        println!("Getting ops in {}", channel);
+        debug!("Getting ops in {}", channel);
         client
             .send_privmsg("ChanServ", format!("op {}", channel))
             .unwrap();
@@ -86,7 +90,7 @@ async fn _wait_for_op(client: &Client, channel: &str) {
         if is_opped_in(client, channel) {
             break;
         }
-        println!("Not opped yet.");
+        debug!("Not opped in {} yet.", channel);
         interval.tick().await;
     }
 }
