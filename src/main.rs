@@ -126,7 +126,12 @@ async fn main() -> Result<()> {
                     }
                 }
                 Command::Response(resp, data) => {
-                    handle_response(resp, data, state.clone()).await;
+                    let resp = *resp;
+                    let data = data.clone();
+                    let state = state.clone();
+                    tokio::spawn(async move {
+                        handle_response(&resp, &data, state).await;
+                    });
                 }
                 _ => {}
             }
