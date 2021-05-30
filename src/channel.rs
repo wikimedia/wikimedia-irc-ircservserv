@@ -5,14 +5,26 @@ use regex::Regex;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
-const FLAGS_FOUNDER: &str = "AFRefiorstv";
-const FLAGS_CRAT: &str = "Afiortv";
-const FLAGS_AUTOVOICE_OP: &str = "AViotv";
-const FLAGS_OP: &str = "Aiotv";
-const FLAGS_PLUS_O: &str = "o";
+const FOUNDER: &[char; 11] =
+    &['A', 'F', 'R', 'e', 'f', 'i', 'o', 'r', 's', 't', 'v'];
+const CRAT: &[char; 7] = &['A', 'f', 'i', 'o', 'r', 't', 'v'];
+const OP: &[char; 5] = &['A', 'i', 'o', 't', 'v'];
+const PLUS_O: &[char; 1] = &['o'];
+const AUTOVOICE: &[char; 2] = &['V', 'v'];
 
 // TODO: set forward to -overflow
 const GLOBAL_BANS: &str = "$j:#wikimedia-bans";
+
+fn parse_flags(input: &str) -> HashSet<char> {
+    let mut set = HashSet::new();
+    for char in input.chars() {
+        if char == '+' || char == '-' {
+            continue;
+        }
+        set.insert(char);
+    }
+    set
+}
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ManagedChannel {
@@ -21,11 +33,11 @@ pub struct ManagedChannel {
     #[serde(default)]
     pub crats: HashSet<String>,
     #[serde(default)]
-    pub autovoice_op: HashSet<String>,
-    #[serde(default)]
     pub ops: HashSet<String>,
     #[serde(default)]
     pub plus_o: HashSet<String>,
+    #[serde(default)]
+    pub autovoice: HashSet<String>,
     #[serde(default)]
     pub global_bans: bool,
     #[serde(default)]
@@ -34,7 +46,7 @@ pub struct ManagedChannel {
     pub invexes: HashSet<String>,
     // unknown modes
     #[serde(default)]
-    pub unknown: HashMap<String, String>,
+    pub current: HashMap<String, HashSet<char>>,
     // state stuff
     #[serde(default)]
     pub flags_done: bool,
@@ -44,86 +56,96 @@ pub struct ManagedChannel {
     pub invexes_done: bool,
 }
 
+#[derive(Default, Debug)]
+struct FlagChange {
+    current: HashSet<char>,
+    should: HashSet<char>,
+}
+
 impl ManagedChannel {
     pub fn is_done(&self) -> bool {
         self.flags_done && self.bans_done && self.invexes_done
     }
 
     pub fn fix_flags(&self, cfg: &ManagedChannel) -> Vec<(String, String)> {
-        let mut changes: HashMap<String, Vec<String>> = HashMap::new();
-        for (name, mode) in self.unknown.iter() {
+        let mut changes: HashMap<String, FlagChange> = HashMap::new();
+        for (name, flags) in self.current.iter() {
             changes
                 .entry(name.to_string())
                 .or_default()
-                .push(format!("-{}", mode));
+                .current
+                .extend(flags);
         }
 
-        // FIXME: macro all of this
-        for remove in self.founders.difference(&cfg.founders) {
+        for name in &cfg.founders {
             changes
-                .entry(remove.to_string())
+                .entry(name.to_string())
                 .or_default()
-                .push(format!("-{}", FLAGS_FOUNDER));
-            //            cmds.push((remove.to_string(), format!("-{}", FLAGS_FOUNDER)))
+                .should
+                .extend(FOUNDER.iter());
         }
-        for add in cfg.founders.difference(&self.founders) {
+        for name in &cfg.crats {
             changes
-                .entry(add.to_string())
+                .entry(name.to_string())
                 .or_default()
-                .push(format!("+{}", FLAGS_FOUNDER));
+                .should
+                .extend(CRAT.iter());
         }
-        for remove in self.crats.difference(&cfg.crats) {
+        for name in &cfg.ops {
             changes
-                .entry(remove.to_string())
+                .entry(name.to_string())
                 .or_default()
-                .push(format!("-{}", FLAGS_CRAT));
+                .should
+                .extend(OP.iter());
         }
-        for add in cfg.crats.difference(&self.crats) {
+        for name in &cfg.plus_o {
             changes
-                .entry(add.to_string())
+                .entry(name.to_string())
                 .or_default()
-                .push(format!("+{}", FLAGS_CRAT));
+                .should
+                .extend(PLUS_O.iter());
         }
-        for remove in self.autovoice_op.difference(&cfg.autovoice_op) {
+        for name in &cfg.autovoice {
             changes
-                .entry(remove.to_string())
+                .entry(name.to_string())
                 .or_default()
-                .push(format!("-{}", FLAGS_AUTOVOICE_OP));
-        }
-        for add in cfg.autovoice_op.difference(&self.autovoice_op) {
-            changes
-                .entry(add.to_string())
-                .or_default()
-                .push(format!("+{}", FLAGS_AUTOVOICE_OP));
-        }
-        for remove in self.ops.difference(&cfg.ops) {
-            changes
-                .entry(remove.to_string())
-                .or_default()
-                .push(format!("-{}", FLAGS_OP));
-        }
-        for add in cfg.ops.difference(&self.ops) {
-            changes
-                .entry(add.to_string())
-                .or_default()
-                .push(format!("+{}", FLAGS_OP));
-        }
-        for remove in self.plus_o.difference(&cfg.plus_o) {
-            changes
-                .entry(remove.to_string())
-                .or_default()
-                .push(format!("-{}", FLAGS_PLUS_O));
-        }
-        for add in cfg.plus_o.difference(&self.plus_o) {
-            changes
-                .entry(add.to_string())
-                .or_default()
-                .push(format!("+{}", FLAGS_PLUS_O));
+                .should
+                .extend(AUTOVOICE.iter());
         }
 
         changes
             .iter()
-            .map(|(name, modes)| (name.to_string(), modes.join("")))
+            .filter_map(|(username, change)| {
+                if change.current == change.should {
+                    // No changes needed
+                    return None;
+                }
+                // Flags currently held but shouldn't hold
+                dbg!(&change);
+                let mut remove: Vec<char> = change
+                    .current
+                    .difference(&change.should)
+                    .cloned()
+                    .collect();
+                remove.sort_unstable();
+                // Flags that should be held but currently aren't
+                let mut add: Vec<char> = change
+                    .should
+                    .difference(&change.current)
+                    .cloned()
+                    .collect();
+                add.sort_unstable();
+                Some((
+                    username.to_string(),
+                    // TODO: Remove leading - or trailing + if there are no
+                    // changes in that direction
+                    format!(
+                        "-{}+{}",
+                        remove.iter().collect::<String>(),
+                        add.iter().collect::<String>(),
+                    ),
+                ))
+            })
             .collect()
     }
 
@@ -149,26 +171,7 @@ impl ManagedChannel {
                 return Err(anyhow::anyhow!("Couldn't parse: {}", line));
             }
             let account = caps[1].to_string();
-            match &caps[2] {
-                FLAGS_FOUNDER => {
-                    self.founders.insert(account);
-                }
-                FLAGS_CRAT => {
-                    self.crats.insert(account);
-                }
-                FLAGS_AUTOVOICE_OP => {
-                    self.autovoice_op.insert(account);
-                }
-                FLAGS_OP => {
-                    self.ops.insert(account);
-                }
-                FLAGS_PLUS_O => {
-                    self.plus_o.insert(account);
-                }
-                mode => {
-                    self.unknown.insert(account, mode.to_string());
-                }
-            };
+            self.current.insert(account, parse_flags(&caps[2]));
             Ok(())
         } else {
             Err(anyhow::anyhow!("Couldn't parse: {}", line))
@@ -189,7 +192,10 @@ mod tests {
     #[test]
     fn test_fix_flags() {
         let managed = ManagedChannel {
-            founders: set("foo"),
+            current: [("foo".to_string(), FOUNDER.iter().cloned().collect())]
+                .iter()
+                .cloned()
+                .collect(),
             ..Default::default()
         };
         let cfg = ManagedChannel {
@@ -197,11 +203,17 @@ mod tests {
             ops: set("foo"),
             ..Default::default()
         };
-        let res = managed.fix_flags(&cfg);
+        let mut res = managed.fix_flags(&cfg);
+        res.sort();
         let expected = vec![
-            ("foo".to_string(), "-AFRefiorstv+Aiotv".to_string()),
-            ("bar".to_string(), "+AFRefiorstv".to_string()),
+            ("bar".to_string(), "-+AFRefiorstv".to_string()),
+            ("foo".to_string(), "-FRefrs+".to_string()),
         ];
         assert_eq!(expected, res);
+    }
+
+    #[test]
+    fn test_parse_flags() {
+        assert_eq!(parse_flags("+Vv"), vec!['v', 'V'].into_iter().collect(),);
     }
 }

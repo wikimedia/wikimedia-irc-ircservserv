@@ -49,10 +49,11 @@ impl BotState {
     /// NOTE: you need to check that flags_done is true first
     pub fn is_founder_on(&self, channel: &str, username: &str) -> bool {
         if let Some(managed_channel) = self.channels.get(channel) {
-            managed_channel.founders.contains(username)
-        } else {
-            false
+            if let Some(flags) = managed_channel.current.get(username) {
+                return flags.contains(&'F');
+            }
         }
+        false
     }
 }
 
