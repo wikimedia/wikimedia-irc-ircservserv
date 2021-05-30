@@ -62,6 +62,34 @@ struct FlagChange {
     should: HashSet<char>,
 }
 
+impl FlagChange {
+    fn to_mode(&self) -> Option<String> {
+        if self.current == self.should {
+            // No changes needed
+            return None;
+        }
+        dbg!(self);
+        // Flags currently held but shouldn't hold
+        let mut remove: Vec<char> =
+            self.current.difference(&self.should).cloned().collect();
+        remove.sort_unstable();
+        // Flags that should be held but currently aren't
+        let mut add: Vec<char> =
+            self.should.difference(&self.current).cloned().collect();
+        add.sort_unstable();
+        let mut mode = "".to_string();
+        if !remove.is_empty() {
+            mode.push('-');
+            mode.extend(remove);
+        }
+        if !add.is_empty() {
+            mode.push('+');
+            mode.extend(add);
+        }
+        Some(mode)
+    }
+}
+
 impl ManagedChannel {
     pub fn is_done(&self) -> bool {
         self.flags_done && self.bans_done && self.invexes_done
@@ -116,35 +144,7 @@ impl ManagedChannel {
         changes
             .iter()
             .filter_map(|(username, change)| {
-                if change.current == change.should {
-                    // No changes needed
-                    return None;
-                }
-                // Flags currently held but shouldn't hold
-                dbg!(&change);
-                let mut remove: Vec<char> = change
-                    .current
-                    .difference(&change.should)
-                    .cloned()
-                    .collect();
-                remove.sort_unstable();
-                // Flags that should be held but currently aren't
-                let mut add: Vec<char> = change
-                    .should
-                    .difference(&change.current)
-                    .cloned()
-                    .collect();
-                add.sort_unstable();
-                Some((
-                    username.to_string(),
-                    // TODO: Remove leading - or trailing + if there are no
-                    // changes in that direction
-                    format!(
-                        "-{}+{}",
-                        remove.iter().collect::<String>(),
-                        add.iter().collect::<String>(),
-                    ),
-                ))
+                change.to_mode().map(|mode| (username.to_string(), mode))
             })
             .collect()
     }
@@ -206,10 +206,21 @@ mod tests {
         let mut res = managed.fix_flags(&cfg);
         res.sort();
         let expected = vec![
-            ("bar".to_string(), "-+AFRefiorstv".to_string()),
-            ("foo".to_string(), "-FRefrs+".to_string()),
+            ("bar".to_string(), "+AFRefiorstv".to_string()),
+            ("foo".to_string(), "-FRefrs".to_string()),
         ];
         assert_eq!(expected, res);
+    }
+
+    #[test]
+    fn test_flag_change() {
+        let mut change = FlagChange::default();
+        change.current.extend(['A', 'B', 'C'].iter());
+        assert_eq!(&change.to_mode().unwrap(), "-ABC");
+        change.should.extend(['A', 'B', 'D'].iter());
+        assert_eq!(&change.to_mode().unwrap(), "-C+D");
+        change.current.clear();
+        assert_eq!(&change.to_mode().unwrap(), "+ABD");
     }
 
     #[test]
