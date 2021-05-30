@@ -11,7 +11,10 @@ async fn git(args: &[&str]) -> Result<String> {
         Err(anyhow!(
             "Running git {} failed: {}",
             args.join(" "),
-            output.status.code().unwrap_or_default()
+            output
+                .status
+                .code()
+                .map_or_else(|| "unknown".to_string(), |c| c.to_string())
         ))
     }
 }

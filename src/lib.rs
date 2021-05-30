@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use irc::client::data::AccessLevel;
 use irc::client::prelude::*;
 use log::debug;
@@ -58,20 +58,14 @@ impl BotState {
 }
 
 /// Ask ChanServ for ops in a channel and wait till its set
-async fn wait_for_op(client: &Client, channel: &str) -> bool {
+async fn wait_for_op(client: &Client, channel: &str) -> Result<()> {
     let tmt =
         timeout(Duration::from_secs(5), _wait_for_op(client, channel)).await;
     if tmt.is_err() {
         debug!("Timeout getting ops for {}", channel);
-        client
-            .send_privmsg(
-                channel,
-                format!("Error: Unable to get opped in {}", channel),
-            )
-            .unwrap();
-        false
+        Err(anyhow!("Unable to get opped in {}", channel))
     } else {
-        true
+        Ok(())
     }
 }
 
@@ -80,6 +74,7 @@ async fn _wait_for_op(client: &Client, channel: &str) {
         debug!("Getting ops in {}", channel);
         client
             .send_privmsg("ChanServ", format!("op {}", channel))
+            // unwrap: OK, panic if we can't send messages
             .unwrap();
     } else {
         // Already opped!

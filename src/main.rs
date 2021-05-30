@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
                         chanserv_tx
                             .send(chanserv::Message::Notice(notice.to_string()))
                             .await
+                            // unwrap: OK, if this channel dies we want to panic
                             .unwrap();
                     }
                 }
@@ -100,7 +101,19 @@ async fn main() -> Result<()> {
                             let target = target.to_string();
                             let client = client.clone();
                             tokio::spawn(async move {
-                                command::iss_pull(&client, &target).await;
+                                let res =
+                                    command::iss_pull(&client, &target).await;
+                                if let Err(err) = res {
+                                    client
+                                        .send_privmsg(
+                                            message.response_target().unwrap(),
+                                            format!(
+                                                "Error: {}",
+                                                err.to_string()
+                                            ),
+                                        )
+                                        .unwrap();
+                                }
                             });
                         }
                     } else if privmsg == "!issync" {
@@ -115,13 +128,22 @@ async fn main() -> Result<()> {
                         let state = state.clone();
                         let chanserv_tx = chanserv_tx.clone();
                         tokio::spawn(async move {
-                            command::iss_sync(
+                            let res = command::iss_sync(
                                 &message,
                                 &client,
                                 &state,
                                 chanserv_tx,
                             )
                             .await;
+                            if let Err(err) = res {
+                                client
+                                    .send_privmsg(
+                                        // FIXME: Avoid unwrap
+                                        message.response_target().unwrap(),
+                                        format!("Error: {}", err.to_string()),
+                                    )
+                                    .unwrap();
+                            }
                         });
                     }
                 }

@@ -16,66 +16,41 @@ const PULL_CHANNEL: &str = "#wikimedia-ops";
 /// This command must be used in the pull channel. Once
 /// it's finished, it will respond with the list of channels
 /// that have config updates.
-pub async fn iss_pull(client: &Arc<Client>, target: &str) {
+pub async fn iss_pull(client: &Arc<Client>, target: &str) -> Result<()> {
     if target != PULL_CHANNEL {
-        client
-            .send_privmsg(
-                target,
-                format!("This command can only be used in {}", PULL_CHANNEL),
-            )
-            .unwrap();
-        return;
+        return Err(anyhow!(
+            "This command can only be used in {}",
+            PULL_CHANNEL
+        ));
     }
-    match git::pull().await {
-        Ok(changed) => {
-            if changed.is_empty() {
-                client
-                    .send_privmsg(target, "There are no pending changes.")
-                    .unwrap();
-                return;
-            }
+    let changed = git::pull().await?;
+    if changed.is_empty() {
+        client.send_privmsg(target, "There are no pending changes.")?;
+        return Ok(());
+    }
 
-            client
-                .send_privmsg(
-                    target,
-                    format!("Pulled changes for: {}", changed.join(", ")),
-                )
-                .unwrap();
-            // Join any new channels that we just learned about
-            let currently_in = client.list_channels().unwrap_or_else(Vec::new);
-            for channel in changed {
-                if !currently_in.contains(&channel) {
-                    client.send_join(&channel).unwrap();
-                }
-            }
-        }
-        Err(e) => {
-            client
-                .send_privmsg(
-                    target,
-                    format!("Error pulling changes: {}", e.to_string()),
-                )
-                .unwrap();
+    client.send_privmsg(
+        target,
+        format!("Pulled changes for: {}", changed.join(", ")),
+    )?;
+    // Join any new channels that we just learned about
+    let currently_in = client.list_channels().unwrap_or_else(Vec::new);
+    for channel in changed {
+        if !currently_in.contains(&channel) {
+            client.send_join(&channel)?;
         }
     }
+    Ok(())
 }
 
 /// Require a command was sent in a channel, not PM
-fn must_be_in_channel(sender: Sender, message: &Message) -> Option<String> {
+fn must_be_in_channel(message: &Message) -> Result<String> {
     if let Some(target) = message.response_target() {
-        if !target.starts_with('#') {
-            // Not a channel
-            sender
-                .send_privmsg(target, "This command must be used in-channel.")
-                .unwrap();
-            None
-        } else {
-            Some(target.to_string())
+        if target.starts_with('#') {
+            return Ok(target.to_string());
         }
-    } else {
-        // Not a PM, not in channel? wtf.
-        None
     }
+    Err(anyhow!("This command must be used in-channel."))
 }
 
 /// Responds to `!issync`, the whole magic of the bot.
@@ -93,22 +68,11 @@ pub async fn iss_sync(
     client: &Arc<Client>,
     state: &LockedState,
     chanserv_tx: MpscSender<chanserv::Message>,
-) {
-    // FIXME: avoid unwrap
-    let channel = must_be_in_channel(client.sender(), message).unwrap();
-    let account = match crate::extract_account(&message) {
-        Some(account) => account,
-        None => {
-            // Not authed?
-            client
-                .send_privmsg(
-                    message.response_target().unwrap(),
-                    "You don't have permission to update channel settings",
-                )
-                .unwrap();
-            return;
-        }
-    };
+) -> Result<()> {
+    let channel = must_be_in_channel(message)?;
+    let account = crate::extract_account(&message).ok_or_else(|| {
+        anyhow!("You don't have permission to update channel settings")
+    })?;
     // First we need to verify the person making the request is a founder
     chanserv_tx
         .send(chanserv::Message::Flags(channel.to_string()))
@@ -126,65 +90,49 @@ pub async fn iss_sync(
     if !is_trusted(&state, &message, TrustLevel::Owner).await
         && !state.read().await.is_founder_on(&channel, &account)
     {
-        client
-            .send_privmsg(
-                message.response_target().unwrap(),
-                "You don't have permission to update channel settings",
-            )
-            .unwrap();
-        return;
+        return Err(anyhow!(
+            "You don't have permission to update channel settings"
+        ));
     }
     // At this point the person is authorized to sync
-    client
-        .send_privmsg(
-            message.response_target().unwrap(),
-            format!("Syncing {} (requested by {})", &channel, &account),
-        )
-        .unwrap();
+    client.send_privmsg(
+        message.response_target().unwrap(),
+        format!("Syncing {} (requested by {})", &channel, &account),
+    )?;
     // Make sure we're op before checking +b and +I
-    if !crate::wait_for_op(&client, &channel).await {
-        // Failed at getting op (sends its own error)
-        return;
-    }
+    crate::wait_for_op(&client, &channel).await?;
     // TODO: combine these?
-    client
-        .send_mode(&channel, &[Mode::Plus(ChannelMode::Ban, None)])
-        .unwrap();
-    client
-        .send_mode(&channel, &[Mode::Plus(ChannelMode::InviteException, None)])
-        .unwrap();
-    let state = state.clone();
-    let channel = channel.to_string();
-    let client = client.clone();
-    tokio::spawn(async move {
-        // Check every 200ms if we're ready to go
-        let mut done_interval = interval(Duration::from_millis(200));
-        loop {
-            if state.read().await.is_channel_done(&channel) {
-                break;
-            }
-            // Wait a bit (but make sure we're not holding the read lock here)
-            done_interval.tick().await;
+    client.send_mode(&channel, &[Mode::Plus(ChannelMode::Ban, None)])?;
+    client.send_mode(
+        &channel,
+        &[Mode::Plus(ChannelMode::InviteException, None)],
+    )?;
+    // Check every 200ms if we're ready to go
+    let mut done_interval = interval(Duration::from_millis(200));
+    loop {
+        if state.read().await.is_channel_done(&channel) {
+            break;
         }
-        let managed_channel = {
-            let mut w = state.write().await;
-            w.channels.remove(&channel).unwrap()
-        };
-        //dbg!(&managed_channel);
-        sync_channel(&client, state.clone(), &channel, &managed_channel)
-            .await
-            .unwrap();
-        // de-op
-        client
-            .send_mode(
-                &channel,
-                &[Mode::Minus(
-                    UserMode::Oper,
-                    Some(client.current_nickname().to_string()),
-                )],
-            )
-            .unwrap();
-    });
+        // Wait a bit (but make sure we're not holding the read lock here)
+        done_interval.tick().await;
+    }
+    let managed_channel = {
+        let mut w = state.write().await;
+        // FIXME not fully safe, if another thread gets the write lock
+        // first it could have already removed the channel.
+        w.channels.remove(&channel).unwrap()
+    };
+    //dbg!(&managed_channel);
+    sync_channel(&client, state.clone(), &channel, &managed_channel).await?;
+    // de-op, TODO: possible race here if our mode changes haven't taken effect yet
+    client.send_mode(
+        &channel,
+        &[Mode::Minus(
+            UserMode::Oper,
+            Some(client.current_nickname().to_string()),
+        )],
+    )?;
+    Ok(())
 }
 
 /// Do the actual sync step, comparing the live channel
@@ -221,9 +169,8 @@ async fn sync_channel(
         return Ok(());
     }
     // If we have to change modes, make sure we're opped (already should've happened)
-    if !mode_cmds.is_empty() && !crate::wait_for_op(client, channel).await {
-        // Getting op failed
-        return Err(anyhow!("Unable to get op"));
+    if !mode_cmds.is_empty() {
+        crate::wait_for_op(client, channel).await?;
     }
     // FIXME: Implement proper ratelimiting, see https://github.com/aatxe/irc/issues/190
     for (account, flags) in flag_cmds {
