@@ -77,57 +77,58 @@ async fn main() -> Result<()> {
     let processor = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
             //dbg!(&message);
-            if let Command::NOTICE(_, notice) = &message.command {
-                if is_from(&message, "ChanServ") {
-                    debug!("From ChanServ: {}", notice);
-                    chanserv_tx
-                        .send(chanserv::Message::Notice(notice.to_string()))
-                        .await
-                        .unwrap();
-                    continue;
-                }
-            }
-            if let Command::PRIVMSG(_, privmsg) = &message.command {
-                if privmsg == "!isspull" {
-                    if !is_trusted(&state, &message, TrustLevel::Trusted).await
-                    {
-                        // Silently ignore
-                        continue;
+            match &message.command {
+                Command::NOTICE(_, notice) => {
+                    if is_from(&message, "ChanServ") {
+                        debug!("From ChanServ: {}", notice);
+                        chanserv_tx
+                            .send(chanserv::Message::Notice(notice.to_string()))
+                            .await
+                            .unwrap();
                     }
-                    // FIXME: this should only be done in-channel, maybe only -ops?
-                    if let Some(target) = message.response_target() {
-                        let target = target.to_string();
+                }
+                Command::PRIVMSG(_, privmsg) => {
+                    if privmsg == "!isspull" {
+                        if !is_trusted(&state, &message, TrustLevel::Trusted)
+                            .await
+                        {
+                            // Silently ignore
+                            continue;
+                        }
+                        // FIXME: this should only be done in-channel, maybe only -ops?
+                        if let Some(target) = message.response_target() {
+                            let target = target.to_string();
+                            let client = client.clone();
+                            tokio::spawn(async move {
+                                command::iss_pull(&client, &target).await;
+                            });
+                        }
+                    } else if privmsg == "!issync" {
+                        debug!(
+                            "Received !issync for {} from {}",
+                            message.response_target().unwrap_or("unknown"),
+                            extract_account(&message)
+                                .unwrap_or_else(|| "unknown".to_string())
+                        );
                         let client = client.clone();
+                        let message = message.clone();
+                        let state = state.clone();
+                        let chanserv_tx = chanserv_tx.clone();
                         tokio::spawn(async move {
-                            command::iss_pull(&client, &target).await;
+                            command::iss_sync(
+                                &message,
+                                &client,
+                                &state,
+                                chanserv_tx,
+                            )
+                            .await;
                         });
                     }
-                    continue;
-                } else if privmsg == "!issync" {
-                    debug!(
-                        "Received !issync for {} from {}",
-                        message.response_target().unwrap_or("unknown"),
-                        extract_account(&message)
-                            .unwrap_or_else(|| "unknown".to_string())
-                    );
-                    let client = client.clone();
-                    let message = message.clone();
-                    let state = state.clone();
-                    let chanserv_tx = chanserv_tx.clone();
-                    tokio::spawn(async move {
-                        command::iss_sync(
-                            &message,
-                            &client,
-                            &state,
-                            chanserv_tx,
-                        )
-                        .await;
-                    });
-                    continue;
                 }
-            }
-            if let Command::Response(resp, data) = &message.command {
-                handle_response(resp, data, state.clone()).await;
+                Command::Response(resp, data) => {
+                    handle_response(resp, data, state.clone()).await;
+                }
+                _ => {}
             }
         }
     });
