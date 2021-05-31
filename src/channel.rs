@@ -1,6 +1,7 @@
 use anyhow::Result;
 use irc::client::prelude::*;
 use irc::proto::mode::ChannelMode::Ban;
+use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -168,14 +169,13 @@ impl ManagedChannel {
 
     pub fn add_flags_from_chanserv(&mut self, line: &str) -> Result<()> {
         // 2        legoktm                +AFRefiorstv         (FOUNDER) [modified...
-        // FIXME use Skizzerz's regex instead
-        // ^[0-9]+\s+[^\s]+\s+\+([A-z]+)
-        // TODO: lazy_static this
-        let re =
-            Regex::new(r"^\d{1,3}\s+([A-z0-9\*\-!@/]+)\s+\+([A-z]+) ").unwrap();
-        if let Some(caps) = re.captures(&line) {
+        lazy_static! {
+            static ref RE: Regex =
+                Regex::new(r"^[0-9]+\s+([^\s]+)\s+\+([A-z]+)").unwrap();
+        }
+        if let Some(caps) = RE.captures(&line) {
             if caps.len() < 3 {
-                return Err(anyhow::anyhow!("Couldn't parse: {}", line));
+                return Err(anyhow::anyhow!("Not enough captures: {}", line));
             }
             let account = caps[1].to_string();
             self.current.insert(account, parse_flags(&caps[2]));

@@ -306,6 +306,7 @@ dependencies = [
  "env_logger",
  "futures-util",
  "irc",
+ "lazy_static",
  "log",
  "regex",
  "serde",
