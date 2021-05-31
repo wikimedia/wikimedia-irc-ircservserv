@@ -16,7 +16,7 @@ pub mod git;
 
 pub type LockedState = Arc<RwLock<BotState>>;
 
-use channel::ManagedChannel;
+use channel::ConfiguredChannel;
 use config::TrustLevel;
 
 #[derive(Default)]
@@ -95,7 +95,7 @@ async fn _wait_for_op(client: &Client, channel: &str) {
 async fn read_channel_config(
     dir: &str,
     channel: &str,
-) -> Result<ManagedChannel> {
+) -> Result<ConfiguredChannel> {
     Ok(toml::from_str(
         &fs::read_to_string(format!(
             "{}/channels/{}.toml",

@@ -27,7 +27,7 @@ fn parse_flags(input: &str) -> HashSet<char> {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct ManagedChannel {
+pub struct ConfiguredChannel {
     #[serde(default)]
     pub founders: HashSet<String>,
     #[serde(default)]
@@ -40,6 +40,12 @@ pub struct ManagedChannel {
     pub autovoice: HashSet<String>,
     #[serde(default)]
     pub global_bans: bool,
+    #[serde(default)]
+    pub invexes: HashSet<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ManagedChannel {
     #[serde(default)]
     pub bans: HashSet<String>,
     #[serde(default)]
@@ -95,7 +101,7 @@ impl ManagedChannel {
         self.flags_done && self.bans_done && self.invexes_done
     }
 
-    pub fn fix_flags(&self, cfg: &ManagedChannel) -> Vec<(String, String)> {
+    pub fn fix_flags(&self, cfg: &ConfiguredChannel) -> Vec<(String, String)> {
         let mut changes: HashMap<String, FlagChange> = HashMap::new();
         for (name, flags) in self.current.iter() {
             changes
@@ -149,7 +155,7 @@ impl ManagedChannel {
             .collect()
     }
 
-    pub fn fix_modes(&self, cfg: &ManagedChannel) -> Vec<Mode<ChannelMode>> {
+    pub fn fix_modes(&self, cfg: &ConfiguredChannel) -> Vec<Mode<ChannelMode>> {
         let mut cmds = vec![];
         if cfg.global_bans && !self.bans.contains(GLOBAL_BANS) {
             cmds.push(Mode::Plus(Ban, Some(GLOBAL_BANS.to_string())));
@@ -198,7 +204,7 @@ mod tests {
                 .collect(),
             ..Default::default()
         };
-        let cfg = ManagedChannel {
+        let cfg = ConfiguredChannel {
             founders: set("bar"),
             ops: set("foo"),
             ..Default::default()

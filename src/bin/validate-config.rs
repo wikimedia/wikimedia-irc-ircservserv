@@ -5,10 +5,10 @@ use std::{env, fs, process};
 // TODO: don't hardcode this
 const ACCOUNT: &str = "ircservserv-wm";
 
-use ircservserv::channel::ManagedChannel;
+use ircservserv::channel::ConfiguredChannel;
 
 fn validate(path: &Path) -> Result<()> {
-    let cfg: ManagedChannel = toml::from_str(&fs::read_to_string(path)?)?;
+    let cfg: ConfiguredChannel = toml::from_str(&fs::read_to_string(path)?)?;
     if cfg.founders.len() > 4 {
         return Err(anyhow!("Can only have 4 founders"));
     }
