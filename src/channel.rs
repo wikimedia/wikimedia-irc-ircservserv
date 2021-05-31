@@ -169,6 +169,7 @@ impl ManagedChannel {
     pub fn add_flags_from_chanserv(&mut self, line: &str) -> Result<()> {
         // 2        legoktm                +AFRefiorstv         (FOUNDER) [modified...
         // FIXME use Skizzerz's regex instead
+        // ^[0-9]+\s+[^\s]+\s+\+([A-z]+)
         // TODO: lazy_static this
         let re =
             Regex::new(r"^\d{1,3}\s+([A-z0-9\*\-!@/]+)\s+\+([A-z]+) ").unwrap();
@@ -227,6 +228,36 @@ mod tests {
         assert_eq!(&change.to_mode().unwrap(), "-C+D");
         change.current.clear();
         assert_eq!(&change.to_mode().unwrap(), "+ABD");
+    }
+
+    #[test]
+    fn test_add_chanserv_flags_line() {
+        // 1        legoktm                +AFRefiorstv         (FOUNDER) [modified 9s ago, on May 30 09:21:18 2021 +0000, by legoktm]
+        // 2        addshore               +Aiotv               [modified 30m 34s ago, on May 30 08:50:53 2021 +0000, by legoktm]
+        let mut channel = ManagedChannel::default();
+        channel.add_flags_from_chanserv(
+            "1        legoktm                +AFRefiorstv         (FOUNDER) [modified 9s ago, on May 30 09:21:18 2021 +0000, by legoktm]"
+        ).unwrap();
+        assert_eq!(
+            channel.current,
+            [("legoktm".to_string(), "AFRefiorstv".chars().collect())]
+                .iter()
+                .cloned()
+                .collect()
+        );
+        channel.add_flags_from_chanserv(
+            "2        addshore               +Aiotv               [modified 30m 34s ago, on May 30 08:50:53 2021 +0000, by legoktm]"
+        ).unwrap();
+        assert_eq!(
+            channel.current,
+            [
+                ("legoktm".to_string(), "AFRefiorstv".chars().collect()),
+                ("addshore".to_string(), "Aiotv".chars().collect())
+            ]
+            .iter()
+            .cloned()
+            .collect()
+        );
     }
 
     #[test]
