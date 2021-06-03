@@ -2,7 +2,7 @@
 use crate::LockedState;
 use irc::client::Client;
 use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::{interval, Duration};
 
 /// Messages that go over the ChanServ channel
@@ -16,7 +16,7 @@ pub enum Message {
 
 /// Listen to messages on the ChanServ channel
 pub async fn listen(
-    rx: &mut Receiver<Message>,
+    rx: &mut UnboundedReceiver<Message>,
     state: LockedState,
     client: Arc<Client>,
 ) {
@@ -25,6 +25,7 @@ pub async fn listen(
             Message::Flags(channel) => {
                 if state.read().await.chanserv.is_some() {
                     // Someone else is reading from chanserv, please wait
+                    // TODO: add a timeout here, don't lock indefinitely
                     let mut interval = interval(Duration::from_millis(200));
                     loop {
                         if state.read().await.chanserv.is_none() {

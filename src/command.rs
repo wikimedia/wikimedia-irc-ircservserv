@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use irc::client::prelude::*;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender as MpscSender;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::{interval, sleep, Duration};
 
 use crate::chanserv;
@@ -67,7 +67,7 @@ pub async fn iss_sync(
     message: &Message,
     client: &Arc<Client>,
     state: &LockedState,
-    chanserv_tx: MpscSender<chanserv::Message>,
+    chanserv_tx: UnboundedSender<chanserv::Message>,
 ) -> Result<()> {
     let channel = must_be_in_channel(message)?;
     let account = crate::extract_account(&message).ok_or_else(|| {
@@ -76,7 +76,6 @@ pub async fn iss_sync(
     // First we need to verify the person making the request is a founder
     chanserv_tx
         .send(chanserv::Message::Flags(channel.to_string()))
-        .await
         .unwrap();
     let mut flag_interval = interval(Duration::from_millis(200));
     loop {
@@ -95,33 +94,9 @@ pub async fn iss_sync(
         ));
     }
     // At this point the person is authorized to sync
-    client.send_privmsg(
-        message.response_target().unwrap(),
-        format!("Syncing {} (requested by {})", &channel, &account),
-    )?;
-    // Make sure we're op before checking +b and +I
-    crate::wait_for_op(&client, &channel).await?;
-    // TODO: combine these?
-    client.send_mode(&channel, &[Mode::Plus(ChannelMode::Ban, None)])?;
-    client.send_mode(
-        &channel,
-        &[Mode::Plus(ChannelMode::InviteException, None)],
-    )?;
-    // Check every 200ms if we're ready to go
-    let mut done_interval = interval(Duration::from_millis(200));
-    loop {
-        if state.read().await.is_channel_done(&channel) {
-            break;
-        }
-        // Wait a bit (but make sure we're not holding the read lock here)
-        done_interval.tick().await;
-    }
-    let managed_channel = {
-        let mut w = state.write().await;
-        // FIXME not fully safe, if another thread gets the write lock
-        // first it could have already removed the channel.
-        w.channels.remove(&channel).unwrap()
-    };
+    let managed_channel =
+        load_managed_channel(client, &channel, state, &account, chanserv_tx)
+            .await?;
     //dbg!(&managed_channel);
     sync_channel(&client, state.clone(), &channel, &managed_channel).await?;
     // de-op, TODO: possible race here if our mode changes haven't taken effect yet
@@ -133,6 +108,49 @@ pub async fn iss_sync(
         )],
     )?;
     Ok(())
+}
+
+async fn load_managed_channel(
+    client: &Client,
+    channel: &str,
+    state: &LockedState,
+    requestor: &str,
+    chanserv_tx: UnboundedSender<chanserv::Message>,
+) -> Result<ManagedChannel> {
+    // It's possible we've already loaded flags before getting here, let's check
+    if !state.read().await.is_flags_done(channel) {
+        chanserv_tx
+            .send(chanserv::Message::Flags(channel.to_string()))
+            .unwrap();
+    }
+    client.send_privmsg(
+        &channel,
+        format!("Syncing {} (requested by {})", channel, &requestor),
+    )?;
+    // Make sure we're op before checking +b and +I
+    crate::wait_for_op(&client, channel).await?;
+    // TODO: combine these?
+    client.send_mode(channel, &[Mode::Plus(ChannelMode::Ban, None)])?;
+    client.send_mode(
+        channel,
+        &[Mode::Plus(ChannelMode::InviteException, None)],
+    )?;
+    // Check every 200ms if we're ready to go
+    let mut done_interval = interval(Duration::from_millis(200));
+    loop {
+        if state.read().await.is_channel_done(channel) {
+            break;
+        }
+        // Wait a bit (but make sure we're not holding the read lock here)
+        done_interval.tick().await;
+    }
+    let managed_channel = {
+        let mut w = state.write().await;
+        // FIXME not fully safe, if another thread gets the write lock
+        // first it could have already removed the channel.
+        w.channels.remove(channel).unwrap()
+    };
+    Ok(managed_channel)
 }
 
 /// Do the actual sync step, comparing the live channel

@@ -60,8 +60,7 @@ async fn main() -> Result<()> {
     // channel for all messages
     let (tx, mut rx) = mpsc::channel::<Message>(128);
     // channel for ChanServ interactions
-    let (chanserv_tx, mut chanserv_rx) =
-        mpsc::channel::<chanserv::Message>(128);
+    let (chanserv_tx, mut chanserv_rx) = mpsc::unbounded_channel();
 
     client.send_cap_req(&[Capability::MultiPrefix, Capability::AccountTag])?;
     client.identify()?;
@@ -83,7 +82,6 @@ async fn main() -> Result<()> {
                         debug!("From ChanServ: {}", notice);
                         chanserv_tx
                             .send(chanserv::Message::Notice(notice.to_string()))
-                            .await
                             // unwrap: OK, if this channel dies we want to panic
                             .unwrap();
                     }
