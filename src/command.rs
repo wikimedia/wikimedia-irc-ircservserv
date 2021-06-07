@@ -16,21 +16,17 @@ const PULL_CHANNEL: &str = "#wikimedia-ops";
 /// This command must be used in the pull channel. Once
 /// it's finished, it will respond with the list of channels
 /// that have config updates.
-pub async fn iss_pull(client: &Arc<Client>, target: &str) -> Result<()> {
-    if target != PULL_CHANNEL {
-        return Err(anyhow!(
-            "This command can only be used in {}",
-            PULL_CHANNEL
-        ));
-    }
+pub async fn iss_pull(client: &Arc<Client>, message: &Message) -> Result<()> {
+    // Must be run in the pull channel
+    must_be_in(message, PULL_CHANNEL)?;
     let changed = git::pull().await?;
     if changed.is_empty() {
-        client.send_privmsg(target, "There are no pending changes.")?;
+        client.send_privmsg(PULL_CHANNEL, "There are no pending changes.")?;
         return Ok(());
     }
 
     client.send_privmsg(
-        target,
+        PULL_CHANNEL,
         format!("Pulled changes for: {}", changed.join(", ")),
     )?;
     // Join any new channels that we just learned about
@@ -44,13 +40,23 @@ pub async fn iss_pull(client: &Arc<Client>, target: &str) -> Result<()> {
 }
 
 /// Require a command was sent in a channel, not PM
-fn must_be_in_channel(message: &Message) -> Result<String> {
+fn must_be_in_a_channel(message: &Message) -> Result<String> {
     if let Some(target) = message.response_target() {
         if target.starts_with('#') {
             return Ok(target.to_string());
         }
     }
     Err(anyhow!("This command must be used in-channel."))
+}
+
+fn must_be_in(message: &Message, channel: &str) -> Result<()> {
+    if let Some(target) = message.response_target() {
+        if target == channel {
+            return Ok(());
+        }
+    }
+
+    Err(anyhow!("This command can only be used in {}", channel))
 }
 
 /// Responds to `!issync`, the whole magic of the bot.
@@ -69,7 +75,7 @@ pub async fn iss_sync(
     state: &LockedState,
     chanserv_tx: UnboundedSender<chanserv::Message>,
 ) -> Result<()> {
-    let channel = must_be_in_channel(message)?;
+    let channel = must_be_in_a_channel(message)?;
     let account = crate::extract_account(&message).ok_or_else(|| {
         anyhow!("You don't have permission to update channel settings")
     })?;

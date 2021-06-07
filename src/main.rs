@@ -94,26 +94,20 @@ async fn main() -> Result<()> {
                             // Silently ignore
                             continue;
                         }
-                        // FIXME: this should only be done in-channel, maybe only -ops?
-                        if let Some(target) = message.response_target() {
-                            let target = target.to_string();
-                            let client = client.clone();
-                            tokio::spawn(async move {
-                                let res =
-                                    command::iss_pull(&client, &target).await;
-                                if let Err(err) = res {
-                                    client
-                                        .send_privmsg(
-                                            message.response_target().unwrap(),
-                                            format!(
-                                                "Error: {}",
-                                                err.to_string()
-                                            ),
-                                        )
-                                        .unwrap();
-                                }
-                            });
-                        }
+                        let client = client.clone();
+                        let message = message.clone();
+                        tokio::spawn(async move {
+                            let res =
+                                command::iss_pull(&client, &message).await;
+                            if let Err(err) = res {
+                                client
+                                    .send_privmsg(
+                                        message.response_target().unwrap(),
+                                        format!("Error: {}", err.to_string()),
+                                    )
+                                    .unwrap();
+                            }
+                        });
                     } else if privmsg == "!issync" {
                         debug!(
                             "Received !issync for {} from {}",
