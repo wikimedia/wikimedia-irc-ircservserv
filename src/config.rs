@@ -3,6 +3,9 @@ use irc::client::prelude::*;
 use serde::Deserialize;
 use tokio::fs;
 
+const URL: &str = "https://meta.wikimedia.org/wiki/IRC/Bots/ircservserv";
+const GIT_VERSION: &str = git_version::git_version!();
+
 /// IRC Bot configuration: `config.toml`
 #[derive(Deserialize, Default)]
 pub struct BotConfig {
@@ -38,6 +41,7 @@ impl BotConfig {
                 fs::read_to_string(password_file).await?.trim().to_string(),
             );
         }
+        botconfig.irc.version = Some(format!("{}, git: {}", URL, GIT_VERSION));
 
         Ok(botconfig)
     }
