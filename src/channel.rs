@@ -15,6 +15,8 @@ const AUTOVOICE: &[char; 2] = &['V', 'v'];
 
 // TODO: set forward to -overflow
 const GLOBAL_BANS: &str = "$j:#wikimedia-bans";
+const LIBERA_STAFF: &str = "*!*@libera/staff/*";
+const LITHARGE: &str = "litharge";
 
 fn parse_flags(input: &str) -> HashSet<char> {
     let mut set = HashSet::new();
@@ -41,6 +43,9 @@ pub struct ConfiguredChannel {
     pub autovoice: HashSet<String>,
     #[serde(default)]
     pub global_bans: bool,
+    /// Gives Libera staff and litharge +o rights
+    #[serde(default)]
+    pub libera_staff: bool,
     #[serde(default)]
     pub invexes: HashSet<String>,
 }
@@ -147,6 +152,18 @@ impl ManagedChannel {
                 .should
                 .extend(AUTOVOICE.iter());
         }
+        if cfg.libera_staff {
+            changes
+                .entry(LIBERA_STAFF.to_string())
+                .or_default()
+                .should
+                .extend(PLUS_O.iter());
+            changes
+                .entry(LITHARGE.to_string())
+                .or_default()
+                .should
+                .extend(PLUS_O.iter());
+        }
 
         changes
             .iter()
@@ -215,6 +232,21 @@ mod tests {
         let expected = vec![
             ("bar".to_string(), "+AFRefiorstv".to_string()),
             ("foo".to_string(), "-FRefrs".to_string()),
+        ];
+        assert_eq!(expected, res);
+    }
+
+    #[test]
+    fn test_libera_staff() {
+        let cfg = ConfiguredChannel {
+            libera_staff: true,
+            ..Default::default()
+        };
+        let mut res = ManagedChannel::default().fix_flags(&cfg);
+        res.sort();
+        let expected = vec![
+            (LIBERA_STAFF.to_string(), "+o".to_string()),
+            (LITHARGE.to_string(), "+o".to_string()),
         ];
         assert_eq!(expected, res);
     }
