@@ -17,6 +17,7 @@ const AUTOVOICE: &[char; 2] = &['V', 'v'];
 const GLOBAL_BANS: &str = "$j:#wikimedia-bans";
 const LIBERA_STAFF: &str = "*!*@libera/staff/*";
 const LITHARGE: &str = "litharge";
+const WMOPBOT: &str = "wmopbot";
 
 fn parse_flags(input: &str) -> HashSet<char> {
     let mut set = HashSet::new();
@@ -46,6 +47,9 @@ pub struct ConfiguredChannel {
     /// Gives Libera staff and litharge +o rights
     #[serde(default)]
     pub libera_staff: bool,
+    /// Gives wmopbot +ot rights
+    #[serde(default)]
+    pub wmopbot: bool,
     #[serde(default)]
     pub invexes: HashSet<String>,
 }
@@ -163,6 +167,13 @@ impl ManagedChannel {
                 .or_default()
                 .should
                 .extend(PLUS_O.iter());
+        }
+        if cfg.wmopbot {
+            changes
+                .entry(WMOPBOT.to_string())
+                .or_default()
+                .should
+                .extend(&['o', 't'])
         }
 
         changes
