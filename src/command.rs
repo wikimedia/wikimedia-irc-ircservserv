@@ -76,7 +76,7 @@ pub async fn iss_sync(
     chanserv_tx: UnboundedSender<chanserv::Message>,
 ) -> Result<()> {
     let channel = must_be_in_a_channel(message)?;
-    let account = crate::extract_account(&message).ok_or_else(|| {
+    let account = crate::extract_account(message).ok_or_else(|| {
         anyhow!("You don't have permission to update channel settings")
     })?;
     // First we need to verify the person making the request is a founder
@@ -92,7 +92,7 @@ pub async fn iss_sync(
         flag_interval.tick().await;
     }
     // Must be a bot owner or a channel founder
-    if !is_trusted(&state, &message, TrustLevel::Owner).await
+    if !is_trusted(state, message, TrustLevel::Owner).await
         && !state.read().await.is_founder_on(&channel, &account)
     {
         return Err(anyhow!(
@@ -104,7 +104,7 @@ pub async fn iss_sync(
         load_managed_channel(client, &channel, state, &account, chanserv_tx)
             .await?;
     //dbg!(&managed_channel);
-    sync_channel(&client, state.clone(), &channel, &managed_channel).await?;
+    sync_channel(client, state.clone(), &channel, &managed_channel).await?;
     // de-op, TODO: possible race here if our mode changes haven't taken effect yet
     client.send_mode(
         &channel,
@@ -134,7 +134,7 @@ async fn load_managed_channel(
         format!("Syncing {} (requested by {})", channel, &requestor),
     )?;
     // Make sure we're op before checking +b and +I
-    crate::wait_for_op(&client, channel).await?;
+    crate::wait_for_op(client, channel).await?;
     // TODO: combine these?
     client.send_mode(channel, &[Mode::Plus(ChannelMode::Ban, None)])?;
     client.send_mode(

@@ -190,7 +190,7 @@ impl ManagedChannel {
             static ref RE: Regex =
                 Regex::new(r"^[0-9]+\s+([^\s]+)\s+\+([A-z]+)").unwrap();
         }
-        if let Some(caps) = RE.captures(&line) {
+        if let Some(caps) = RE.captures(line) {
             if caps.len() < 3 {
                 return Err(anyhow::anyhow!("Not enough captures: {}", line));
             }
